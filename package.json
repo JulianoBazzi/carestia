@@ -1,0 +1,60 @@
+{
+  "name": "minha-inflacao",
+  "version": "1.0.0",
+  "description": "Minha Inflação — acompanhe a inflação do seu próprio bolso.",
+  "author": "Juliano Bazzi",
+  "license": "ISC",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.6.0",
+      "onFail": "download"
+    }
+  },
+  "dependencies": {
+    "@chakra-ui/react": "3.36.0",
+    "@emotion/react": "11.14.0",
+    "@julianobazzi/nextjs-utils": "1.0.3",
+    "@julianobazzi/utils": "1.0.6",
+    "@prisma/adapter-pg": "7.8.0",
+    "@prisma/client": "7.8.0",
+    "axios": "1.18.1",
+    "next": "16.2.9",
+    "next-pwa": "5.6.0",
+    "next-themes": "0.4.6",
+    "nookies": "2.5.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-icons": "5.6.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.0",
+    "@chakra-ui/cli": "3.36.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "25.9.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "dotenv": "17.4.2",
+    "jsdom": "29.1.1",
+    "prisma": "7.8.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  }
+}

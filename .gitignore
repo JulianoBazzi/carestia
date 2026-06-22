@@ -1,0 +1,31 @@
+# dependencies
+/node_modules
+.pnpm-store
+
+# next.js
+/.next
+/out
+next-env.d.ts
+
+# prisma generated client
+/src/generated
+
+# pwa (next-pwa build output)
+/public/sw.js
+/public/sw.js.map
+/public/workbox-*.js
+/public/workbox-*.js.map
+/public/fallback-*.js
+
+# testing
+/coverage
+
+# env
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+*.log
+*.tsbuildinfo
