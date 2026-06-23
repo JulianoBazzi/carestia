@@ -8,14 +8,140 @@ datasource db {
   provider = "postgresql"
 }
 
-// Placeholder — troque pelo modelo real do domínio.
-model Expense {
-  id          String   @id @default(cuid())
-  description String
-  amount      Decimal  @db.Decimal(12, 2)
-  incurredAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+enum ItemType {
+  product
+  service
 
-  @@map("expenses")
+  @@map("item_type")
+}
+
+enum InvoiceModel {
+  nfe
+  nfse
+
+  @@map("invoice_model")
+}
+
+// Tabelas globais (todo o sistema)
+
+model Category {
+  id         String    @id @db.VarChar(26)
+  name       String    @db.VarChar(255)
+  slug       String    @unique @db.VarChar(255)
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  items Item[]
+
+  @@index([deleted_at])
+  @@map("categories")
+}
+
+model Company {
+  id           String    @id @db.VarChar(26)
+  document     String    @unique @db.VarChar(14) // CNPJ
+  social_name  String    @db.VarChar(255)
+  fantasy_name String?   @db.VarChar(255)
+  street       String?   @db.VarChar(255)
+  number       String?   @db.VarChar(20)
+  neighborhood String?   @db.VarChar(255)
+  city         String?   @db.VarChar(255)
+  state        String?   @db.VarChar(2)
+  zipcode      String?   @db.VarChar(8)
+  ibge_code    String?   @db.VarChar(7)
+  cnae         String?   @db.VarChar(7)
+  source       String    @db.VarChar(20) // "xml" | "brasilapi"
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  updated_at   DateTime  @updatedAt @db.Timestamptz
+  deleted_at   DateTime? @db.Timestamptz
+
+  invoices Invoice[]
+
+  @@index([deleted_at])
+  @@map("companies")
+}
+
+model Item {
+  id             String    @id @db.VarChar(26)
+  type           ItemType
+  reference_code String    @db.VarChar(20) // NCM (product) | cTribNac (service)
+  name           String    @db.VarChar(255)
+  unit           String?   @db.VarChar(10)
+  nbs_code       String?   @db.VarChar(20)
+  category_id    String?   @db.VarChar(26)
+  created_at     DateTime  @default(now()) @db.Timestamptz
+  updated_at     DateTime  @updatedAt @db.Timestamptz
+  deleted_at     DateTime? @db.Timestamptz
+
+  category      Category?     @relation(fields: [category_id], references: [id])
+  invoice_items InvoiceItem[]
+
+  @@unique([type, reference_code, name])
+  @@index([category_id])
+  @@index([deleted_at])
+  @@map("items")
+}
+
+// Tabelas por usuário
+
+model User {
+  id         String    @id @db.VarChar(26)
+  name       String    @db.VarChar(255)
+  email      String    @unique @db.VarChar(255)
+  password   String    @db.VarChar(255)
+  active     Boolean   @default(true)
+  created_at DateTime  @default(now()) @db.Timestamptz
+  updated_at DateTime  @updatedAt @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  invoices Invoice[]
+
+  @@index([deleted_at])
+  @@map("users")
+}
+
+model Invoice {
+  id          String       @id @db.VarChar(26)
+  user_id     String       @db.VarChar(26)
+  company_id  String       @db.VarChar(26)
+  model       InvoiceModel
+  number      String       @db.VarChar(20)
+  series      String?      @db.VarChar(10)
+  access_key  String       @db.VarChar(64) // chave NF-e (44) | Id NFS-e
+  issued_at   DateTime     @db.Timestamptz
+  total_value Int // centavos
+  raw_xml     String?      @db.Text // XML original (auditoria/reimport)
+  created_at  DateTime     @default(now()) @db.Timestamptz
+  updated_at  DateTime     @updatedAt @db.Timestamptz
+  deleted_at  DateTime?    @db.Timestamptz
+
+  user    User          @relation(fields: [user_id], references: [id])
+  company Company       @relation(fields: [company_id], references: [id])
+  items   InvoiceItem[]
+
+  @@unique([user_id, access_key])
+  @@index([user_id])
+  @@index([company_id])
+  @@index([deleted_at])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @db.VarChar(26)
+  invoice_id  String   @db.VarChar(26)
+  item_id     String   @db.VarChar(26)
+  description String   @db.VarChar(255)
+  quantity    Decimal  @db.Decimal(14, 4) // não-monetário, mantém casas
+  unit        String?  @db.VarChar(10)
+  unit_value  Int // centavos (arredondado)
+  total_value Int // centavos
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  invoice Invoice @relation(fields: [invoice_id], references: [id])
+  item    Item    @relation(fields: [item_id], references: [id])
+
+  @@index([invoice_id])
+  @@index([item_id])
+  @@map("invoice_items")
 }
