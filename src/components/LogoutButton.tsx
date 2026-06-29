@@ -3,6 +3,7 @@
 import { Button } from '@chakra-ui/react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { LuLogOut } from 'react-icons/lu';
 
 export function LogoutButton() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export function LogoutButton() {
 
   return (
     <Button variant="outline" size="sm" loading={loading} onClick={onLogout}>
+      <LuLogOut />
       Sair
     </Button>
   );

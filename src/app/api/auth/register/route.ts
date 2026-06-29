@@ -1,21 +1,28 @@
+import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { hashPassword } from '~/lib/auth/password';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import { newId } from '~/lib/id';
 import prisma from '~/lib/prisma';
-import { firstIssue, registerSchema } from '~/lib/validation';
+import { firstIssue, registerSchema } from '~/schemas/auth';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+    return NextResponse.json(
+      { message: firstIssue(parsed.error) },
+      { status: StatusCodes.BAD_REQUEST },
+    );
   }
   const { name, email, password } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    return NextResponse.json({ error: 'E-mail já cadastrado.' }, { status: 409 });
+    return NextResponse.json(
+      { message: 'E-mail já cadastrado.' },
+      { status: StatusCodes.CONFLICT },
+    );
   }
 
   const user = await prisma.user.create({
@@ -28,11 +35,14 @@ export async function POST(req: Request) {
     email: user.email,
   });
 
-  const res = NextResponse.json({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-  });
+  const res = NextResponse.json(
+    {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+    },
+    { status: StatusCodes.CREATED },
+  );
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',

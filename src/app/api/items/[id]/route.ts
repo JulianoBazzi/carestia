@@ -1,3 +1,4 @@
+import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
 import { setItemCategory } from '~/services/management';
@@ -7,7 +8,7 @@ export const runtime = 'nodejs';
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
 
   const { id } = await params;
@@ -17,7 +18,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const count = await setItemCategory(id, categoryId);
   if (count === 0) {
-    return NextResponse.json({ error: 'Item não encontrado.' }, { status: 404 });
+    return NextResponse.json(
+      { message: 'Item não encontrado.' },
+      { status: StatusCodes.NOT_FOUND },
+    );
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
 }

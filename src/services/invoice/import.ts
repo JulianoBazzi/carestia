@@ -1,5 +1,6 @@
 import { newId } from '~/lib/id';
 import { toCents } from '~/lib/money';
+import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { fetchCnpj } from '~/services/brasilapi';
 import { type ICompanyDTO, type IParsedInvoice, parseXml } from '~/services/invoice/parser';
@@ -35,7 +36,16 @@ async function resolveCompany(dto: ICompanyDTO) {
     }
   }
 
-  return { data, source };
+  const normalized: ICompanyDTO = {
+    ...data,
+    socialName: normalizeName(data.socialName) ?? data.socialName,
+    fantasyName: normalizeName(data.fantasyName),
+    street: normalizeName(data.street),
+    neighborhood: normalizeName(data.neighborhood),
+    city: normalizeName(data.city),
+  };
+
+  return { data: normalized, origin: source };
 }
 
 export async function importInvoice(
@@ -58,7 +68,7 @@ export async function importInvoice(
     seenKeys.add(parsed.invoice.accessKey);
   }
 
-  const { data: companyData, source } = await resolveCompany(parsed.company);
+  const { data: companyData, origin } = await resolveCompany(parsed.company);
 
   try {
     const invoiceId = await prisma.$transaction(async (tx) => {
@@ -76,7 +86,7 @@ export async function importInvoice(
           state: companyData.state,
           zipcode: companyData.zipcode,
           ibge_code: companyData.ibgeCode,
-          source,
+          origin,
         },
         update: {
           social_name: companyData.socialName,
@@ -86,19 +96,20 @@ export async function importInvoice(
 
       const lineItems = [];
       for (const it of parsed.items) {
+        const name = normalizeName(it.name) ?? it.name;
         const item = await tx.item.upsert({
           where: {
             type_reference_code_name: {
               type: it.type,
               reference_code: it.referenceCode,
-              name: it.name,
+              name,
             },
           },
           create: {
             id: newId(),
             type: it.type,
             reference_code: it.referenceCode,
-            name: it.name,
+            name,
             unit: it.unit,
             nbs_code: it.nbsCode,
           },
@@ -107,7 +118,7 @@ export async function importInvoice(
         lineItems.push({
           id: newId(),
           item_id: item.id,
-          description: it.description,
+          description: normalizeName(it.description) ?? it.description,
           quantity: it.quantity,
           unit: it.unit,
           unit_value: toCents(it.unitValue),

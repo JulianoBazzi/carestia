@@ -1,5 +1,6 @@
-import { Badge, Card, HStack, Stack, Stat, Text } from '@chakra-ui/react';
+import { Badge, Card, Heading, HStack, Icon, Stack, Stat, Text } from '@chakra-ui/react';
 import { formatPercentage } from '@julianobazzi/utils';
+import { LuTrendingUp } from 'react-icons/lu';
 import type { IInflation } from '~/services/invoice/analytics';
 
 function variationColor(pct: number) {
@@ -15,6 +16,12 @@ export function InflationHighlight({ inflation }: { inflation: IInflation }) {
     <Card.Root>
       <Card.Body>
         <Stack gap={4}>
+          <HStack gap={2}>
+            <Icon color="teal.500">
+              <LuTrendingUp />
+            </Icon>
+            <Heading size="sm">Inflação pessoal</Heading>
+          </HStack>
           <Stat.Root>
             <Stat.Label>Seu índice de inflação pessoal</Stat.Label>
             <Stat.ValueText color={`${variationColor(inflation.index)}.500`}>

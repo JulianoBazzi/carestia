@@ -4,9 +4,9 @@ export interface IDefaultCategory {
 }
 
 export const DEFAULT_CATEGORIES: IDefaultCategory[] = [
-  { name: 'Combustíveis', slug: 'combustiveis' },
-  { name: 'Alimentação', slug: 'alimentacao' },
-  { name: 'Serviços', slug: 'servicos' },
-  { name: 'Saúde', slug: 'saude' },
-  { name: 'Outros', slug: 'outros' },
+  { name: 'COMBUSTIVEIS', slug: 'combustiveis' },
+  { name: 'ALIMENTACAO', slug: 'alimentacao' },
+  { name: 'SERVICOS', slug: 'servicos' },
+  { name: 'SAUDE', slug: 'saude' },
+  { name: 'OUTROS', slug: 'outros' },
 ];

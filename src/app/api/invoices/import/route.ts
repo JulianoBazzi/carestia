@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
 import { type ImportResult, importInvoice } from '~/services/invoice/import';
@@ -29,20 +30,23 @@ async function toXmlEntries(file: File): Promise<IEntry[]> {
 export async function POST(req: Request) {
   const session = await getSession();
   if (!session) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    return NextResponse.json({ error: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
 
   const form = await req.formData().catch(() => null);
   if (!form) {
     return NextResponse.json(
       { error: "Envie multipart/form-data com o campo 'file'." },
-      { status: 400 },
+      { status: StatusCodes.BAD_REQUEST },
     );
   }
 
   const files = form.getAll('file').filter((f): f is File => f instanceof File);
   if (files.length === 0) {
-    return NextResponse.json({ error: 'Nenhum arquivo enviado.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Nenhum arquivo enviado.' },
+      { status: StatusCodes.BAD_REQUEST },
+    );
   }
 
   const seenKeys = new Set<string>();
@@ -73,5 +77,5 @@ export async function POST(req: Request) {
     errors: results.filter((r) => r.status === 'error').length,
   };
 
-  return NextResponse.json({ summary, results });
+  return NextResponse.json({ summary, results }, { status: StatusCodes.OK });
 }

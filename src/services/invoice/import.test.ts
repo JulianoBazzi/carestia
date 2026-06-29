@@ -61,7 +61,7 @@ describe('importInvoice — NF-e', () => {
   it('não consulta BrasilAPI quando XML já tem endereço', async () => {
     await importInvoice('user-1', nfe);
     expect(fetchCnpj).not.toHaveBeenCalled();
-    expect(tx.company.upsert.mock.calls[0][0].create.source).toBe('xml');
+    expect(tx.company.upsert.mock.calls[0][0].create.origin).toBe('xml');
   });
 
   it('grava o XML cru', async () => {
@@ -118,7 +118,7 @@ describe('importInvoice — BrasilAPI fallback', () => {
 
     expect(fetchCnpj).toHaveBeenCalledWith('11111111000111');
     const create = tx.company.upsert.mock.calls[0][0].create;
-    expect(create.source).toBe('brasilapi');
+    expect(create.origin).toBe('brasilapi');
     expect(create.street).toBe('RUA API');
   });
 });

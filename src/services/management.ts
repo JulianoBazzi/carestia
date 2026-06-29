@@ -1,4 +1,6 @@
 import 'server-only';
+import { newId } from '~/lib/id';
+import { normalizeName, slugify } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 
 export function listCategories() {
@@ -6,6 +8,32 @@ export function listCategories() {
     where: { deleted_at: null },
     orderBy: { name: 'asc' },
   });
+}
+
+export function createCategory(name: string) {
+  const normalized = normalizeName(name);
+  if (!normalized) throw new Error('Nome obrigatório.');
+  return prisma.category.create({
+    data: { id: newId(), name: normalized, slug: slugify(name) },
+  });
+}
+
+export async function updateCategory(id: string, name: string): Promise<number> {
+  const normalized = normalizeName(name);
+  if (!normalized) throw new Error('Nome obrigatório.');
+  const result = await prisma.category.updateMany({
+    where: { id, deleted_at: null },
+    data: { name: normalized, slug: slugify(name) },
+  });
+  return result.count;
+}
+
+export async function deleteCategory(id: string): Promise<number> {
+  const result = await prisma.category.updateMany({
+    where: { id, deleted_at: null },
+    data: { deleted_at: new Date() },
+  });
+  return result.count;
 }
 
 export function listItems() {
@@ -60,10 +88,24 @@ export interface ICompanyUpdate {
   zipcode?: string | null;
 }
 
+const COMPANY_NAME_FIELDS: (keyof ICompanyUpdate)[] = [
+  'social_name',
+  'fantasy_name',
+  'street',
+  'neighborhood',
+  'city',
+];
+
 export async function updateCompany(id: string, data: ICompanyUpdate): Promise<number> {
+  const normalized: ICompanyUpdate = { ...data };
+  for (const field of COMPANY_NAME_FIELDS) {
+    if (field in normalized) {
+      (normalized as Record<string, unknown>)[field] = normalizeName(normalized[field]) ?? null;
+    }
+  }
   const result = await prisma.company.updateMany({
     where: { id, deleted_at: null },
-    data,
+    data: normalized,
   });
   return result.count;
 }

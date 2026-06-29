@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { StatusCodes } from 'http-status-codes';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
-import { type ICompanyUpdate, updateCompany } from '~/services/management';
+import { getCompany, type ICompanyUpdate, updateCompany } from '~/services/management';
 
 export const runtime = 'nodejs';
 
@@ -15,10 +16,27 @@ const FIELDS: (keyof ICompanyUpdate)[] = [
   'zipcode',
 ];
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
+  }
+
+  const { id } = await params;
+  const company = await getCompany(id);
+  if (!company) {
+    return NextResponse.json(
+      { message: 'Empresa não encontrada.' },
+      { status: StatusCodes.NOT_FOUND },
+    );
+  }
+  return NextResponse.json({ data: company });
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
 
   const { id } = await params;
@@ -32,12 +50,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
   if (!data.social_name) {
-    return NextResponse.json({ error: 'Razão social é obrigatória.' }, { status: 400 });
+    return NextResponse.json(
+      { message: 'Razão social é obrigatória.' },
+      { status: StatusCodes.BAD_REQUEST },
+    );
   }
 
   const count = await updateCompany(id, data);
   if (count === 0) {
-    return NextResponse.json({ error: 'Empresa não encontrada.' }, { status: 404 });
+    return NextResponse.json(
+      { message: 'Empresa não encontrada.' },
+      { status: StatusCodes.NOT_FOUND },
+    );
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
 }

@@ -50,8 +50,7 @@ model Company {
   state        String?   @db.VarChar(2)
   zipcode      String?   @db.VarChar(8)
   ibge_code    String?   @db.VarChar(7)
-  cnae         String?   @db.VarChar(7)
-  source       String    @db.VarChar(20) // "xml" | "brasilapi"
+  origin       String    @db.VarChar(20) // "xml" | "brasilapi"
   created_at   DateTime  @default(now()) @db.Timestamptz
   updated_at   DateTime  @updatedAt @db.Timestamptz
   deleted_at   DateTime? @db.Timestamptz
