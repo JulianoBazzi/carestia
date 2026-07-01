@@ -1,63 +1,29 @@
 // Funções puras de agregação (sem DB) — testáveis isoladamente.
+// Privacy-first: trabalhamos só com PREÇO UNITÁRIO (R$), sem quantidades nem totais.
 
-export interface IMetricsInvoice {
-  model: 'nfe' | 'nfse';
-  issuedAt: Date;
-  totalValue: number; // centavos
-}
-
-export interface IMetrics {
-  totalSpent: number; // centavos
-  invoiceCount: number;
-  avgTicket: number; // centavos
-  byType: { product: number; service: number }; // centavos
-  perMonth: Array<{ month: string; total: number }>; // month = "YYYY-MM", total em centavos
-}
-
-export function computeMetrics(invoices: IMetricsInvoice[]): IMetrics {
-  const totalSpent = invoices.reduce((acc, i) => acc + i.totalValue, 0);
-  const invoiceCount = invoices.length;
-  const avgTicket = invoiceCount === 0 ? 0 : Math.round(totalSpent / invoiceCount);
-
-  const byType = { product: 0, service: 0 };
-  const monthMap = new Map<string, number>();
-
-  for (const inv of invoices) {
-    if (inv.model === 'nfe') byType.product += inv.totalValue;
-    else byType.service += inv.totalValue;
-
-    const month = inv.issuedAt.toISOString().slice(0, 7); // YYYY-MM
-    monthMap.set(month, (monthMap.get(month) ?? 0) + inv.totalValue);
-  }
-
-  const perMonth = Array.from(monthMap.entries())
-    .map(([month, total]) => ({ month, total }))
-    .sort((a, b) => a.month.localeCompare(b.month));
-
-  return { totalSpent, invoiceCount, avgTicket, byType, perMonth };
-}
+export type ItemKind = 'product' | 'service' | 'energy';
 
 export interface IInflationRow {
   itemId: string;
   name: string;
   referenceCode: string;
-  type: 'product' | 'service';
+  type: ItemKind;
   categoryName?: string;
   issuedAt: Date;
-  unitValue: number; // centavos
+  unitValue: number; // reais (R$/un, R$/kWh)
 }
 
 export interface IInflationItem {
   itemId: string;
   name: string;
   referenceCode: string;
-  type: 'product' | 'service';
+  type: ItemKind;
   categoryName?: string;
   count: number;
-  firstValue: number; // centavos
-  lastValue: number; // centavos
+  firstValue: number; // reais
+  lastValue: number; // reais
   variationPct: number; // 0.15 = +15%
-  history: Array<{ date: string; unitValue: number }>; // unitValue em centavos
+  history: Array<{ date: string; unitValue: number }>; // unitValue em reais
 }
 
 export interface IInflation {
@@ -141,6 +107,80 @@ export function comparePersonalVsIpca(
     ipca: ipcaAcc,
     diffPp: (personalIndex - ipcaAcc) * 100,
   };
+}
+
+export interface IInflationSeriesPoint {
+  month: string; // "YYYY-MM"
+  personalPct: number; // acumulado, 0.1 = +10%
+  ipcaPct: number; // acumulado, 0.1 = +10%
+}
+
+/** Lista de meses "YYYY-MM" do menor ao maior `issuedAt`. */
+function monthRange(rows: IInflationRow[]): string[] {
+  const months = rows.map((r) => r.issuedAt.toISOString().slice(0, 7)).sort();
+  const first = months[0];
+  const last = months[months.length - 1];
+  const out: string[] = [];
+  let [y, m] = first.split('-').map(Number);
+  while (true) {
+    const cur = `${y}-${String(m).padStart(2, '0')}`;
+    out.push(cur);
+    if (cur === last) break;
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Série mensal acumulada da inflação pessoal × IPCA, para o gráfico do dashboard.
+ * Em cada mês, a inflação pessoal é recalculada considerando o primeiro preço de
+ * cada item × o último preço até aquele mês (ponderada pelo último preço).
+ */
+export function computeMonthlyInflationSeries(
+  rows: IInflationRow[],
+  ipca: IIpcaSeriesPoint[],
+): IInflationSeriesPoint[] {
+  if (rows.length === 0) return [];
+
+  const byItem = new Map<string, IInflationRow[]>();
+  for (const r of rows) {
+    const list = byItem.get(r.itemId) ?? [];
+    list.push(r);
+    byItem.set(r.itemId, list);
+  }
+  for (const [, list] of byItem) {
+    list.sort((a, b) => a.issuedAt.getTime() - b.issuedAt.getTime());
+  }
+
+  const ipcaByMonth = new Map<string, number>();
+  let ipcaAcc = 1;
+  for (const p of [...ipca].sort((a, b) => a.month.localeCompare(b.month))) {
+    ipcaAcc *= 1 + p.pct / 100;
+    ipcaByMonth.set(p.month, ipcaAcc - 1);
+  }
+
+  const out: IInflationSeriesPoint[] = [];
+  let lastIpca = 0;
+  for (const month of monthRange(rows)) {
+    let weight = 0;
+    let weighted = 0;
+    for (const [, list] of byItem) {
+      const upto = list.filter((r) => r.issuedAt.toISOString().slice(0, 7) <= month);
+      if (upto.length < 2) continue;
+      const first = upto[0].unitValue;
+      const last = upto[upto.length - 1].unitValue;
+      if (first === 0) continue;
+      weight += last;
+      weighted += ((last - first) / first) * last;
+    }
+    if (ipcaByMonth.has(month)) lastIpca = ipcaByMonth.get(month) as number;
+    out.push({ month, personalPct: weight === 0 ? 0 : weighted / weight, ipcaPct: lastIpca });
+  }
+  return out;
 }
 
 // Inflação por categoria ----------------------------------------------------

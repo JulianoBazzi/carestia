@@ -9,6 +9,8 @@ interface IParamsRequest {
   perPage?: number;
   orderBy?: string | null;
   sortedBy?: OrderByTypeEnum;
+  /** Filtro por tipo de item (product | service). */
+  type?: string | null;
 }
 
 export default IParamsRequest;

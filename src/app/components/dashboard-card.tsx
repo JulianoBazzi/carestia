@@ -1,40 +1,49 @@
 'use client';
 
-import {
-  Card,
-  Link as CLink,
-  Grid,
-  GridItem,
-  Heading,
-  HStack,
-  Icon,
-  Spinner,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
-import { formatCurrency } from '@julianobazzi/utils';
+import { Card, Flex, Heading, SegmentGroup, Spinner, Stack, Table, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
-import { LuChartColumn } from 'react-icons/lu';
-import { SpendingChart } from '~/components/charts/SpendingChart';
-import { InflationHighlight } from '~/components/InflationHighlight';
-import { InvoiceUpload } from '~/components/InvoiceUpload';
-import { MetricsCards } from '~/components/MetricsCards';
-import { fromCents } from '~/lib/money';
-import { useDashboardMetrics } from '~/services/hooks/useDashboard';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { LuListChecks, LuPercent, LuScale, LuUpload } from 'react-icons/lu';
+import { AdSlot } from '~/components/Ad/AdSlot';
+import { StatusBadge } from '~/components/Badge/StatusBadge';
+import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
+import { InflationCompareChart } from '~/components/charts/InflationCompareChart';
+import { StatCard } from '~/components/StatCard';
+import { formatPct, formatPp, formatPrice } from '~/lib/format';
 import { useInflation } from '~/services/hooks/useInflation';
+import type { IInflationItem, ItemKind } from '~/services/invoice/analytics';
 
-function monthLabel(ym: string): string {
-  const [year, month] = ym.split('-');
-  return `${month}/${year}`;
+const TYPE_TABS = [
+  { value: '', label: 'Todos' },
+  { value: 'product', label: 'Produtos' },
+  { value: 'service', label: 'Serviços' },
+  { value: 'energy', label: 'Energia' },
+];
+
+function typeBadge(type: ItemKind) {
+  if (type === 'energy')
+    return <StatusBadge withDot={false} label="Energia" colorPalette="energy" />;
+  if (type === 'service')
+    return <StatusBadge withDot={false} label="Serviço" colorPalette="purple" />;
+  return <StatusBadge withDot={false} label="Produto" colorPalette="blue" />;
+}
+
+function priceOf(item: IInflationItem, value: number): string {
+  return formatPrice(value, item.type === 'energy' ? 6 : 2);
 }
 
 export function DashboardCard() {
-  const metricsQuery = useDashboardMetrics();
-  const inflationQuery = useInflation();
-  const metrics = metricsQuery.data;
-  const inflation = inflationQuery.data;
+  const router = useRouter();
+  const { data, isLoading } = useInflation();
+  const [typeFilter, setTypeFilter] = useState('');
 
-  if (!metrics) {
+  const filteredItems = useMemo(() => {
+    const items = data?.items ?? [];
+    return typeFilter ? items.filter((i) => i.type === typeFilter) : items;
+  }, [data, typeFilter]);
+
+  if (isLoading || !data) {
     return (
       <Stack align="center" py="20">
         <Spinner />
@@ -42,52 +51,160 @@ export function DashboardCard() {
     );
   }
 
-  const spending = metrics.perMonth.map((p) => ({
-    month: monthLabel(p.month),
-    total: fromCents(p.total),
-  }));
+  const { comparison, series, items } = data;
+  const ipcaAcc = comparison.ipca;
 
   return (
-    <Stack gap={6}>
-      <MetricsCards metrics={metrics} />
+    <Stack gap="6">
+      <Flex justify="space-between" align="center" gap="4" wrap="wrap">
+        <Stack gap="0.5">
+          <Heading size="lg" fontFamily="heading">
+            Dashboard
+          </Heading>
+          <Text fontSize="sm" color="fg.muted">
+            Sua inflação real comparada ao IPCA oficial.
+          </Text>
+        </Stack>
+        <PrimaryButton size="sm" asChild>
+          <NextLink href="/invoices/import">
+            <LuUpload /> Importar XML
+          </NextLink>
+        </PrimaryButton>
+      </Flex>
 
-      <Grid templateColumns={{ base: '1fr', lg: '2fr 1fr' }} gap={6}>
-        <GridItem>
-          <Card.Root h="full">
+      <AdSlot variant="banner" />
+
+      <Flex gap="4" wrap="wrap">
+        <StatCard
+          label="Minha inflação"
+          value={formatPct(comparison.personal, { signed: true })}
+          icon={<LuPercent size={18} />}
+          colorPalette={comparison.personal >= 0 ? 'red' : 'teal'}
+          accentValue
+        />
+        <StatCard
+          label="IPCA (oficial)"
+          value={formatPct(comparison.ipca, { signed: true })}
+          icon={<LuScale size={18} />}
+          colorPalette="gray"
+        />
+        <StatCard
+          label="Diferença"
+          value={formatPp(comparison.diffPp)}
+          icon={<LuScale size={18} />}
+          colorPalette={comparison.diffPp >= 0 ? 'red' : 'teal'}
+          accentValue
+        />
+        <StatCard
+          label="Itens monitorados"
+          value={items.length}
+          icon={<LuListChecks size={18} />}
+          colorPalette="teal"
+        />
+      </Flex>
+
+      <Flex gap="5" align="start">
+        <Stack flex="1" minW="0" gap="5">
+          <Card.Root bg="bg.surface">
             <Card.Body>
-              <HStack gap={2} mb={4}>
-                <Icon color="teal.500">
-                  <LuChartColumn />
-                </Icon>
-                <Heading size="sm">Gasto por mês</Heading>
-              </HStack>
-              {spending.length === 0 ? (
-                <Text color="fg.muted" fontSize="sm">
-                  Sem dados ainda.
-                </Text>
-              ) : (
-                <SpendingChart data={spending} />
-              )}
+              <Stack gap="3">
+                <Heading size="sm" fontFamily="heading">
+                  Inflação acumulada · mês a mês
+                </Heading>
+                {series.length === 0 ? (
+                  <Text fontSize="sm" color="fg.muted">
+                    Importe ao menos dois preços de um mesmo item para ver a evolução.
+                  </Text>
+                ) : (
+                  <InflationCompareChart series={series} />
+                )}
+              </Stack>
             </Card.Body>
           </Card.Root>
-        </GridItem>
-        <GridItem>
-          {inflation && (
-            <InflationHighlight inflation={{ index: inflation.index, items: inflation.items }} />
-          )}
-        </GridItem>
-      </Grid>
 
-      <InvoiceUpload />
+          <Card.Root bg="bg.surface">
+            <Card.Body>
+              <Stack gap="4">
+                <Flex justify="space-between" align="center" gap="3" wrap="wrap">
+                  <Heading size="sm" fontFamily="heading">
+                    Inflação item a item vs IPCA
+                  </Heading>
+                  <SegmentGroup.Root
+                    size="sm"
+                    value={typeFilter}
+                    onValueChange={(e) => setTypeFilter(e.value ?? '')}
+                  >
+                    <SegmentGroup.Indicator />
+                    {TYPE_TABS.map((t) => (
+                      <SegmentGroup.Item key={t.value} value={t.value}>
+                        <SegmentGroup.ItemText>{t.label}</SegmentGroup.ItemText>
+                        <SegmentGroup.ItemHiddenInput />
+                      </SegmentGroup.Item>
+                    ))}
+                  </SegmentGroup.Root>
+                </Flex>
 
-      <HStack justify="space-between">
-        <Text color="fg.muted" fontSize="sm">
-          Total gasto: {formatCurrency(metrics.totalSpent)}
-        </Text>
-        <CLink asChild fontSize="sm" color="teal.600" fontWeight="medium">
-          <NextLink href="/invoices">Ver todas as notas →</NextLink>
-        </CLink>
-      </HStack>
+                {filteredItems.length === 0 ? (
+                  <Text fontSize="sm" color="fg.muted" py="4">
+                    Nenhum item com histórico suficiente ainda.
+                  </Text>
+                ) : (
+                  <Table.Root size="sm" interactive>
+                    <Table.Header>
+                      <Table.Row>
+                        <Table.ColumnHeader>Item</Table.ColumnHeader>
+                        <Table.ColumnHeader>Tipo</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="center">Preços</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="end">1º preço</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="end">Último</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="end">Variação</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="end">vs IPCA</Table.ColumnHeader>
+                      </Table.Row>
+                    </Table.Header>
+                    <Table.Body>
+                      {filteredItems.map((item) => (
+                        <Table.Row
+                          key={item.itemId}
+                          cursor="pointer"
+                          onClick={() => router.push(`/inflation/${item.itemId}`)}
+                        >
+                          <Table.Cell>
+                            <Text fontWeight="medium" lineClamp={1}>
+                              {item.name}
+                            </Text>
+                            <Text fontSize="xs" color="fg.muted">
+                              {item.referenceCode}
+                            </Text>
+                          </Table.Cell>
+                          <Table.Cell>{typeBadge(item.type)}</Table.Cell>
+                          <Table.Cell textAlign="center">{item.count}</Table.Cell>
+                          <Table.Cell textAlign="end">{priceOf(item, item.firstValue)}</Table.Cell>
+                          <Table.Cell textAlign="end">{priceOf(item, item.lastValue)}</Table.Cell>
+                          <Table.Cell textAlign="end">
+                            <Text
+                              color={item.variationPct >= 0 ? 'price.up' : 'price.down'}
+                              fontWeight="semibold"
+                            >
+                              {formatPct(item.variationPct, { signed: true })}
+                            </Text>
+                          </Table.Cell>
+                          <Table.Cell textAlign="end" color="fg.muted">
+                            {formatPp((item.variationPct - ipcaAcc) * 100)}
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Root>
+                )}
+              </Stack>
+            </Card.Body>
+          </Card.Root>
+        </Stack>
+        <Stack display={{ base: 'none', xl: 'flex' }} gap="4">
+          <AdSlot variant="vertical" />
+          <AdSlot variant="square" />
+        </Stack>
+      </Flex>
     </Stack>
   );
 }

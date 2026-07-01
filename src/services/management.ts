@@ -10,22 +10,35 @@ export function listCategories() {
   });
 }
 
-export function createCategory(name: string) {
+export function createCategory(name: string, active = true) {
   const normalized = normalizeName(name);
   if (!normalized) throw new Error('Nome obrigatório.');
   return prisma.category.create({
-    data: { id: newId(), name: normalized, slug: slugify(name) },
+    data: { id: newId(), name: normalized, slug: slugify(name), active },
   });
 }
 
-export async function updateCategory(id: string, name: string): Promise<number> {
+export async function updateCategory(id: string, name: string, active?: boolean): Promise<number> {
   const normalized = normalizeName(name);
   if (!normalized) throw new Error('Nome obrigatório.');
   const result = await prisma.category.updateMany({
     where: { id, deleted_at: null },
-    data: { name: normalized, slug: slugify(name) },
+    data: { name: normalized, slug: slugify(name), ...(active !== undefined && { active }) },
   });
   return result.count;
+}
+
+/** Contagens para os cards de métrica da tela de categorias. */
+export async function getCategoryStats(): Promise<{
+  total: number;
+  active: number;
+  inactive: number;
+}> {
+  const [total, active] = await Promise.all([
+    prisma.category.count({ where: { deleted_at: null } }),
+    prisma.category.count({ where: { deleted_at: null, active: true } }),
+  ]);
+  return { total, active, inactive: total - active };
 }
 
 export async function deleteCategory(id: string): Promise<number> {
@@ -51,6 +64,55 @@ export async function setItemCategory(itemId: string, categoryId: string | null)
   const result = await prisma.item.updateMany({
     where: { id: itemId, deleted_at: null },
     data: { category_id: categoryId },
+  });
+  return result.count;
+}
+
+export interface IItemInput {
+  type: 'product' | 'service';
+  name: string;
+  reference_code: string;
+  category_id?: string | null;
+  unit?: string | null;
+}
+
+export function createItem(data: IItemInput) {
+  const name = normalizeName(data.name);
+  if (!name) throw new Error('Nome obrigatório.');
+  if (!data.reference_code) throw new Error('Código de referência obrigatório.');
+  return prisma.item.create({
+    data: {
+      id: newId(),
+      type: data.type,
+      name,
+      reference_code: data.reference_code,
+      category_id: data.category_id || null,
+      unit: data.unit || null,
+    },
+  });
+}
+
+export async function updateItem(id: string, data: IItemInput): Promise<number> {
+  const name = normalizeName(data.name);
+  if (!name) throw new Error('Nome obrigatório.');
+  if (!data.reference_code) throw new Error('Código de referência obrigatório.');
+  const result = await prisma.item.updateMany({
+    where: { id, deleted_at: null },
+    data: {
+      type: data.type,
+      name,
+      reference_code: data.reference_code,
+      category_id: data.category_id || null,
+      ...(data.unit !== undefined && { unit: data.unit || null }),
+    },
+  });
+  return result.count;
+}
+
+export async function deleteItem(id: string): Promise<number> {
+  const result = await prisma.item.updateMany({
+    where: { id, deleted_at: null },
+    data: { deleted_at: new Date() },
   });
   return result.count;
 }
@@ -96,16 +158,57 @@ const COMPANY_NAME_FIELDS: (keyof ICompanyUpdate)[] = [
   'city',
 ];
 
-export async function updateCompany(id: string, data: ICompanyUpdate): Promise<number> {
+function normalizeCompanyData(data: ICompanyUpdate): ICompanyUpdate {
   const normalized: ICompanyUpdate = { ...data };
   for (const field of COMPANY_NAME_FIELDS) {
     if (field in normalized) {
       (normalized as Record<string, unknown>)[field] = normalizeName(normalized[field]) ?? null;
     }
   }
+  if ('zipcode' in normalized && normalized.zipcode) {
+    normalized.zipcode = normalized.zipcode.replace(/\D/g, '').slice(0, 8) || null;
+  }
+  return normalized;
+}
+
+export async function updateCompany(id: string, data: ICompanyUpdate): Promise<number> {
   const result = await prisma.company.updateMany({
     where: { id, deleted_at: null },
-    data: normalized,
+    data: normalizeCompanyData(data),
+  });
+  return result.count;
+}
+
+export interface ICompanyCreate extends ICompanyUpdate {
+  document: string;
+}
+
+export function createCompany(data: ICompanyCreate) {
+  const document = data.document.replace(/\D/g, '');
+  if (document.length !== 14) throw new Error('CNPJ inválido.');
+  const normalized = normalizeCompanyData(data);
+  if (!normalized.social_name) throw new Error('Razão social é obrigatória.');
+  return prisma.company.create({
+    data: {
+      id: newId(),
+      document,
+      origin: 'manual',
+      social_name: normalized.social_name,
+      fantasy_name: normalized.fantasy_name ?? null,
+      street: normalized.street ?? null,
+      number: normalized.number ?? null,
+      neighborhood: normalized.neighborhood ?? null,
+      city: normalized.city ?? null,
+      state: normalized.state ?? null,
+      zipcode: normalized.zipcode ?? null,
+    },
+  });
+}
+
+export async function deleteCompany(id: string): Promise<number> {
+  const result = await prisma.company.updateMany({
+    where: { id, deleted_at: null },
+    data: { deleted_at: new Date() },
   });
   return result.count;
 }

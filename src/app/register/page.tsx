@@ -20,7 +20,7 @@ export default function RegisterPage() {
   const mutation = useMutation({
     mutationFn: (data: RegisterInput) => api.post('/api/auth/register', data),
     onSuccess() {
-      router.replace('/');
+      router.replace('/dashboard');
       router.refresh();
     },
     onError(error: Error) {
@@ -38,7 +38,17 @@ export default function RegisterPage() {
   const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
 
   return (
-    <AuthShell title="Criar conta" subtitle="Comece a controlar sua inflação">
+    <AuthShell
+      title="Criar conta"
+      subtitle="É grátis e leva menos de um minuto"
+      brandHeadline="Descubra a sua inflação real"
+      brandSubtitle="Importe suas NF-e, NFC-e e NFS-e e compare seus gastos com o IPCA oficial."
+      bullets={[
+        'Importe suas notas (NF-e, NFC-e, NFS-e) em segundos',
+        'Compare seus gastos com a inflação oficial (IPCA)',
+        'Acompanhe a inflação por item, loja e categoria',
+      ]}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -85,11 +95,11 @@ export default function RegisterPage() {
             )}
           </form.Field>
           <PrimaryButton type="submit" loading={isSubmitting} w="full">
-            Cadastrar
+            Criar conta
           </PrimaryButton>
           <Text fontSize="sm" color="fg.muted" textAlign="center">
             Já tem conta?{' '}
-            <CLink asChild color="teal.500" fontWeight="medium">
+            <CLink asChild color="teal.600" fontWeight="medium">
               <NextLink href="/login">Entrar</NextLink>
             </CLink>
           </Text>

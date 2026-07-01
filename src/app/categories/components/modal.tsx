@@ -1,6 +1,6 @@
 'use client';
 
-import { Dialog, Stack } from '@chakra-ui/react';
+import { Box, Dialog, Flex, Stack, Text } from '@chakra-ui/react';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
@@ -9,6 +9,7 @@ import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
 import { Input } from '~/components/Input';
+import { Toggle } from '~/components/Toggle/Switch';
 import { API_URL_CATEGORIES, TABLE_CATEGORIES } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
 import type ICategoryAPI from '~/models/Entity/Category/ICategoryAPI';
@@ -47,7 +48,7 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
   });
 
   const form = useForm({
-    defaultValues: { name: '' } as CategoryData,
+    defaultValues: { name: '', active: true } as CategoryData,
     validationLogic: revalidateLogic(),
     validators: { onDynamic: categorySchema },
     onSubmit: ({ value }) => mutation.mutateAsync(categorySchema.parse(value)),
@@ -60,7 +61,7 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
     () => ({
       onOpenDialog(category?: ICategoryAPI) {
         setEditing(category);
-        form.reset({ name: category?.name ?? '' });
+        form.reset({ name: category?.name ?? '', active: category?.active ?? true });
         modalRef.current?.onOpenDialog();
       },
     }),
@@ -79,13 +80,36 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
             {(field) => (
               <Input
                 name={field.name}
-                label="Nome"
+                label="Nome da categoria"
+                placeholder="Ex.: Supermercado"
                 required
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
                 error={field.state.meta.errors[0]?.message}
               />
+            )}
+          </form.Field>
+          <form.Field name="active">
+            {(field) => (
+              <Flex
+                justify="space-between"
+                align="center"
+                gap="4"
+                borderWidth="1px"
+                borderRadius="lg"
+                p="3"
+              >
+                <Box>
+                  <Text fontSize="sm" fontWeight="semibold">
+                    Categoria ativa
+                  </Text>
+                  <Text fontSize="xs" color="fg.muted">
+                    Itens de categorias inativas não entram no cálculo da inflação.
+                  </Text>
+                </Box>
+                <Toggle checked={field.state.value} onChange={(v) => field.handleChange(v)} />
+              </Flex>
             )}
           </form.Field>
         </Stack>
@@ -95,7 +119,7 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
           Cancelar
         </SecondaryButton>
         <PrimaryButton type="submit" loading={isSubmitting}>
-          Salvar
+          Salvar categoria
         </PrimaryButton>
       </Dialog.Footer>
     </Modal>

@@ -5,6 +5,7 @@ import { api } from '~/services/apiClient';
 import type {
   ICategoryInflation,
   IInflationItem,
+  IInflationSeriesPoint,
   IIpcaComparison,
 } from '~/services/invoice/analytics';
 
@@ -13,6 +14,7 @@ export interface IInflationData {
   items: IInflationItem[];
   ipcaAvailable: boolean;
   comparison: IIpcaComparison;
+  series: IInflationSeriesPoint[];
   byCategory: ICategoryInflation[];
 }
 

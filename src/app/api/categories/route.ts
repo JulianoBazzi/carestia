@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
 import { buildMeta, getPaginationParams } from '~/lib/pagination';
 import prisma from '~/lib/prisma';
-import { createCategory } from '~/services/management';
+import { createCategory, getCategoryStats } from '~/services/management';
 
 export const runtime = 'nodejs';
 
@@ -26,17 +26,24 @@ export async function GET(req: NextRequest) {
     ...(search && { name: { contains: search, mode: 'insensitive' as const } }),
   };
 
-  const [data, total] = await Promise.all([
+  const [rows, total, summary] = await Promise.all([
     prisma.category.findMany({
       where,
       orderBy: { [sortField]: order },
       skip: (page - 1) * limit,
       take: limit,
+      include: { _count: { select: { items: true } } },
     }),
     prisma.category.count({ where }),
+    getCategoryStats(),
   ]);
 
-  return NextResponse.json({ data, meta: buildMeta(page, limit, total) });
+  const data = rows.map(({ _count, ...category }) => ({
+    ...category,
+    items_count: _count.items,
+  }));
+
+  return NextResponse.json({ data, meta: buildMeta(page, limit, total), summary });
 }
 
 export async function POST(req: Request) {
@@ -47,6 +54,7 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const active = typeof body.active === 'boolean' ? body.active : true;
   if (!name) {
     return NextResponse.json(
       { message: 'Nome é obrigatório.' },
@@ -55,7 +63,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const category = await createCategory(name);
+    const category = await createCategory(name, active);
     return NextResponse.json({ data: category }, { status: StatusCodes.CREATED });
   } catch (e) {
     if (

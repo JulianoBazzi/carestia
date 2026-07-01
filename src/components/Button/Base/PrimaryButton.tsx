@@ -8,11 +8,12 @@ export function PrimaryButton({ ref, ...rest }: ButtonProps & { ref?: Ref<HTMLBu
     <ChakraButton
       ref={ref}
       colorPalette="teal"
-      bg="teal.500"
+      bg="teal.600"
       color="white"
       borderRadius="md"
-      _hover={{ opacity: 0.9 }}
-      _active={{ opacity: 0.8 }}
+      fontWeight="semibold"
+      _hover={{ bg: 'teal.700' }}
+      _active={{ bg: 'teal.700', opacity: 0.9 }}
       {...rest}
     />
   );

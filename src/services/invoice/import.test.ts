@@ -26,6 +26,9 @@ const nfse = readFileSync(join(fixtures, 'nfse.xml'), 'utf-8');
 
 const nfseNoAddress = `<NFSe><infNFSe Id="NFS999"><nNFSe>9</nNFSe><dhProc>2026-06-01T00:00:00-03:00</dhProc><emit><CNPJ>11111111000111</CNPJ><xNome>EMPRESA SEM ENDERECO</xNome></emit><valores><vLiq>10.00</vLiq></valores><DPS><infDPS Id="DPS1"><serie>1</serie><serv><cServ><cTribNac>010701</cTribNac><xDescServ>SVC</xDescServ></cServ></serv><valores><vServPrest><vServ>10.00</vServ></vServPrest></valores></infDPS></DPS></infNFSe></NFSe>`;
 
+// NFC-e (modelo 65): mesma estrutura da NF-e, distinguida por ide.mod=65.
+const nfce = `<nfeProc><NFe><infNFe Id="NFe65260612345678000199650010000000011000000017"><ide><mod>65</mod><nNF>1</nNF><serie>1</serie><dhEmi>2026-06-02T10:00:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>MERCADO EXEMPLO</xNome><enderEmit><xLgr>RUA A</xLgr><nro>10</nro><xBairro>CENTRO</xBairro><xMun>PORTO ALEGRE</xMun><cMun>4314902</cMun><UF>RS</UF><CEP>90000000</CEP></enderEmit></emit><det><prod><NCM>22030000</NCM><xProd>CERVEJA LATA</xProd><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>5.00</vUnCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
@@ -36,7 +39,7 @@ beforeEach(() => {
 });
 
 describe('importInvoice — NF-e', () => {
-  it('importa e grava valores em centavos', async () => {
+  it('importa guardando só o preço unitário (R$), sem quantidade nem total', async () => {
     const result = await importInvoice('user-1', nfe);
 
     expect(result).toEqual({
@@ -49,24 +52,29 @@ describe('importInvoice — NF-e', () => {
     expect(invoiceArg.model).toBe('nfe');
     expect(invoiceArg.user_id).toBe('user-1');
     expect(invoiceArg.company_id).toBe('company-1');
-    expect(invoiceArg.total_value).toBe(14150); // 141.50 → centavos
-    expect(invoiceArg.items.create[0].total_value).toBe(14150);
-    expect(invoiceArg.items.create[0].unit_value).toBe(368); // 3.680000 arredondado
+    // Privacy-first: sem total da nota, XML cru, quantidade nem total por item.
+    expect(invoiceArg.total_value).toBeUndefined();
+    expect(invoiceArg.raw_xml).toBeUndefined();
+    expect(invoiceArg.items.create[0].quantity).toBeUndefined();
+    expect(invoiceArg.items.create[0].total_value).toBeUndefined();
+    expect(invoiceArg.items.create[0].unit_value).toBeCloseTo(3.68); // R$/un
 
     const itemArg = tx.item.upsert.mock.calls[0][0];
     expect(itemArg.create.type).toBe('product');
     expect(itemArg.create.reference_code).toBe('22071090');
   });
 
+  it('grava o local da compra (emitente) no nível da nota', async () => {
+    await importInvoice('user-1', nfe);
+    const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
+    expect(invoiceArg.state).toBe('MT');
+    expect(invoiceArg.city).toBeTruthy();
+  });
+
   it('não consulta BrasilAPI quando XML já tem endereço', async () => {
     await importInvoice('user-1', nfe);
     expect(fetchCnpj).not.toHaveBeenCalled();
     expect(tx.company.upsert.mock.calls[0][0].create.origin).toBe('xml');
-  });
-
-  it('grava o XML cru', async () => {
-    await importInvoice('user-1', nfe);
-    expect(tx.invoice.create.mock.calls[0][0].data.raw_xml).toBe(nfe);
   });
 });
 
@@ -93,7 +101,27 @@ describe('importInvoice — NFS-e', () => {
     expect(itemArg.create.reference_code).toBe('010701');
 
     const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
-    expect(invoiceArg.total_value).toBe(6000); // 60.00
+    expect(invoiceArg.items.create[0].unit_value).toBeCloseTo(60); // R$ 60,00
+  });
+});
+
+describe('importInvoice — NFC-e', () => {
+  it('detecta modelo 65 (nfce) e grava produto', async () => {
+    const result = await importInvoice('user-1', nfce);
+    expect(result.status).toBe('imported');
+
+    const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
+    expect(invoiceArg.model).toBe('nfce');
+    expect(invoiceArg.items.create[0].unit_value).toBeCloseTo(5); // R$ 5,00/un
+
+    const itemArg = tx.item.upsert.mock.calls[0][0];
+    expect(itemArg.create.type).toBe('product');
+    expect(itemArg.create.reference_code).toBe('22030000');
+  });
+
+  it('não consulta BrasilAPI quando NFC-e tem endereço', async () => {
+    await importInvoice('user-1', nfce);
+    expect(fetchCnpj).not.toHaveBeenCalled();
   });
 });
 

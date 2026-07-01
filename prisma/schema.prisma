@@ -11,13 +11,16 @@ datasource db {
 enum ItemType {
   product
   service
+  energy
 
   @@map("item_type")
 }
 
 enum InvoiceModel {
   nfe
+  nfce
   nfse
+  nf3e // Nota Fiscal de Energia Elétrica Eletrônica (modelo 66)
 
   @@map("invoice_model")
 }
@@ -28,6 +31,7 @@ model Category {
   id         String    @id @db.VarChar(26)
   name       String    @db.VarChar(255)
   slug       String    @unique @db.VarChar(255)
+  active     Boolean   @default(true)
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
@@ -101,19 +105,23 @@ model User {
 }
 
 model Invoice {
-  id          String       @id @db.VarChar(26)
-  user_id     String       @db.VarChar(26)
-  company_id  String       @db.VarChar(26)
-  model       InvoiceModel
-  number      String       @db.VarChar(20)
-  series      String?      @db.VarChar(10)
-  access_key  String       @db.VarChar(64) // chave NF-e (44) | Id NFS-e
-  issued_at   DateTime     @db.Timestamptz
-  total_value Int // centavos
-  raw_xml     String?      @db.Text // XML original (auditoria/reimport)
-  created_at  DateTime     @default(now()) @db.Timestamptz
-  updated_at  DateTime     @updatedAt @db.Timestamptz
-  deleted_at  DateTime?    @db.Timestamptz
+  id         String       @id @db.VarChar(26)
+  user_id    String       @db.VarChar(26)
+  company_id String       @db.VarChar(26)
+  model      InvoiceModel
+  number     String       @db.VarChar(20)
+  series     String?      @db.VarChar(10)
+  access_key String       @db.VarChar(64) // chave NF-e/NF3e (44) | Id NFS-e
+  issued_at  DateTime     @db.Timestamptz
+  // Local da compra/consumo (anonimizado) — usado no índice regional.
+  // Privacy-first: NÃO armazenamos total da nota, XML cru, nem dados pessoais do consumidor.
+  neighborhood String?    @db.VarChar(255)
+  city         String?    @db.VarChar(255)
+  state        String?    @db.VarChar(2)
+  ibge_code    String?    @db.VarChar(7)
+  created_at DateTime     @default(now()) @db.Timestamptz
+  updated_at DateTime     @updatedAt @db.Timestamptz
+  deleted_at DateTime?    @db.Timestamptz
 
   user    User          @relation(fields: [user_id], references: [id])
   company Company       @relation(fields: [company_id], references: [id])
@@ -131,10 +139,10 @@ model InvoiceItem {
   invoice_id  String   @db.VarChar(26)
   item_id     String   @db.VarChar(26)
   description String   @db.VarChar(255)
-  quantity    Decimal  @db.Decimal(14, 4) // não-monetário, mantém casas
   unit        String?  @db.VarChar(10)
-  unit_value  Int // centavos (arredondado)
-  total_value Int // centavos
+  // Preço unitário em reais (R$/un para produtos/serviços, R$/kWh para energia).
+  // Privacy-first: guardamos só o preço unitário — não a quantidade nem o total.
+  unit_value  Decimal  @db.Decimal(14, 6)
   created_at  DateTime @default(now()) @db.Timestamptz
 
   invoice Invoice @relation(fields: [invoice_id], references: [id])

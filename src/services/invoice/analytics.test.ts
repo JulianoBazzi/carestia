@@ -3,52 +3,51 @@ import {
   accumulateIpca,
   comparePersonalVsIpca,
   computeInflation,
-  computeMetrics,
+  computeMonthlyInflationSeries,
   groupInflationByCategory,
   type IInflationItem,
   type IInflationRow,
-  type IMetricsInvoice,
 } from '~/services/invoice/analytics';
 
 const d = (s: string) => new Date(s);
 
-describe('computeMetrics', () => {
-  const invoices: IMetricsInvoice[] = [
-    { model: 'nfe', issuedAt: d('2026-05-10'), totalValue: 10000 },
-    { model: 'nfe', issuedAt: d('2026-06-01'), totalValue: 5000 },
-    { model: 'nfse', issuedAt: d('2026-06-15'), totalValue: 6000 },
+describe('computeMonthlyInflationSeries', () => {
+  const rows: IInflationRow[] = [
+    {
+      itemId: 'a',
+      name: 'Gasolina',
+      referenceCode: '2710',
+      type: 'product',
+      issuedAt: d('2026-05-01'),
+      unitValue: 5,
+    },
+    {
+      itemId: 'a',
+      name: 'Gasolina',
+      referenceCode: '2710',
+      type: 'product',
+      issuedAt: d('2026-06-01'),
+      unitValue: 6,
+    },
+  ];
+  const ipca = [
+    { month: '2026-05', pct: 1 },
+    { month: '2026-06', pct: 2 },
   ];
 
-  it('soma total, conta e ticket médio', () => {
-    const m = computeMetrics(invoices);
-    expect(m.totalSpent).toBe(21000);
-    expect(m.invoiceCount).toBe(3);
-    expect(m.avgTicket).toBe(7000);
+  it('acumula pessoal e IPCA mês a mês', () => {
+    const series = computeMonthlyInflationSeries(rows, ipca);
+    expect(series.map((p) => p.month)).toEqual(['2026-05', '2026-06']);
+    // maio: item com 1 preço → pessoal 0; IPCA acumulado 1%
+    expect(series[0].personalPct).toBe(0);
+    expect(series[0].ipcaPct).toBeCloseTo(0.01);
+    // junho: 5→6 = +20%; IPCA 1.01*1.02-1 = 0.0302
+    expect(series[1].personalPct).toBeCloseTo(0.2);
+    expect(series[1].ipcaPct).toBeCloseTo(0.0302);
   });
 
-  it('separa gasto por tipo', () => {
-    const m = computeMetrics(invoices);
-    expect(m.byType.product).toBe(15000);
-    expect(m.byType.service).toBe(6000);
-  });
-
-  it('agrupa por mês ordenado', () => {
-    const m = computeMetrics(invoices);
-    expect(m.perMonth).toEqual([
-      { month: '2026-05', total: 10000 },
-      { month: '2026-06', total: 11000 },
-    ]);
-  });
-
-  it('lida com lista vazia', () => {
-    const m = computeMetrics([]);
-    expect(m).toEqual({
-      totalSpent: 0,
-      invoiceCount: 0,
-      avgTicket: 0,
-      byType: { product: 0, service: 0 },
-      perMonth: [],
-    });
+  it('retorna vazio sem dados', () => {
+    expect(computeMonthlyInflationSeries([], ipca)).toEqual([]);
   });
 });
 

@@ -12,23 +12,22 @@ import {
   LuTags,
   LuTrendingUp,
 } from 'react-icons/lu';
-import { LogoutButton } from '~/components/LogoutButton';
+import { UserMenu } from '~/components/Template/UserMenu';
 import { ColorModeButton } from '~/components/ui/color-mode';
 
 const links: { href: string; label: string; icon: IconType }[] = [
-  { href: '/', label: 'Dashboard', icon: LuLayoutDashboard },
-  { href: '/invoices', label: 'Notas', icon: LuReceipt },
-  { href: '/inflation', label: 'Inflação', icon: LuTrendingUp },
-  { href: '/items', label: 'Itens', icon: LuTags },
+  { href: '/dashboard', label: 'Dashboard', icon: LuLayoutDashboard },
+  { href: '/invoices', label: 'Notas Fiscais', icon: LuReceipt },
   { href: '/categories', label: 'Categorias', icon: LuFolderTree },
   { href: '/companies', label: 'Empresas', icon: LuBuilding2 },
+  { href: '/items', label: 'Itens', icon: LuTags },
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  return href === '/' ? pathname === '/' : pathname.startsWith(href);
+  return href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
 }
 
-export function Header() {
+export function Header({ user }: { user: { name: string; email: string } }) {
   const pathname = usePathname();
 
   return (
@@ -44,8 +43,8 @@ export function Header() {
     >
       <Flex
         maxW="full"
-        px={{ base: 4, md: 6 }}
-        py={3}
+        px={{ base: 4, md: 7 }}
+        py={2.5}
         justify="space-between"
         align="center"
         gap={4}
@@ -53,12 +52,14 @@ export function Header() {
       >
         <HStack gap={{ base: 4, md: 8 }} wrap="wrap">
           <CLink asChild _hover={{ textDecoration: 'none' }}>
-            <NextLink href="/">
+            <NextLink href="/dashboard">
               <HStack gap={2}>
-                <Circle size="9" bg="teal.500" color="white">
+                <Circle size="8" bg="teal.600" color="white">
                   <LuTrendingUp size={18} />
                 </Circle>
-                <Heading size="md">Minha Inflação</Heading>
+                <Heading size="md" fontFamily="heading">
+                  Minha Inflação
+                </Heading>
               </HStack>
             </NextLink>
           </CLink>
@@ -71,12 +72,12 @@ export function Header() {
                   asChild
                   fontSize="sm"
                   px={3}
-                  py={1.5}
-                  borderRadius="md"
+                  py={2}
+                  borderRadius="lg"
                   fontWeight={active ? 'semibold' : 'medium'}
-                  color={active ? 'teal.600' : 'fg.muted'}
+                  color={active ? 'teal.700' : 'fg.muted'}
                   bg={active ? { base: 'teal.50', _dark: 'teal.950' } : 'transparent'}
-                  _hover={{ textDecoration: 'none', color: 'teal.600' }}
+                  _hover={{ textDecoration: 'none', color: 'teal.700' }}
                 >
                   <NextLink href={l.href}>
                     <HStack gap={1.5}>
@@ -91,7 +92,7 @@ export function Header() {
         </HStack>
         <HStack gap={2}>
           <ColorModeButton />
-          <LogoutButton />
+          <UserMenu name={user.name} email={user.email} />
         </HStack>
       </Flex>
     </Box>

@@ -1,5 +1,4 @@
 import { newId } from '~/lib/id';
-import { toCents } from '~/lib/money';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { fetchCnpj } from '~/services/brasilapi';
@@ -119,12 +118,20 @@ export async function importInvoice(
           id: newId(),
           item_id: item.id,
           description: normalizeName(it.description) ?? it.description,
-          quantity: it.quantity,
           unit: it.unit,
-          unit_value: toCents(it.unitValue),
-          total_value: toCents(it.totalValue),
+          // Privacy-first: só o preço unitário (R$), sem quantidade nem total.
+          unit_value: Number(it.unitValue),
         });
       }
+
+      // Local da compra/consumo (anonimizado) para o índice regional.
+      // Energia: o parser informa o local de consumo (acessante); demais: usa o emitente.
+      const location = parsed.invoice.location ?? {
+        neighborhood: companyData.neighborhood,
+        city: companyData.city,
+        state: companyData.state,
+        ibgeCode: companyData.ibgeCode,
+      };
 
       const invoice = await tx.invoice.create({
         data: {
@@ -135,9 +142,12 @@ export async function importInvoice(
           number: parsed.invoice.number,
           series: parsed.invoice.series,
           access_key: parsed.invoice.accessKey,
-          raw_xml: xml,
           issued_at: new Date(parsed.invoice.issuedAt),
-          total_value: toCents(parsed.invoice.totalValue),
+          // Privacy-first: sem total da nota nem XML cru.
+          neighborhood: location.neighborhood ?? null,
+          city: location.city ?? null,
+          state: location.state ?? null,
+          ibge_code: location.ibgeCode ?? null,
           items: { create: lineItems },
         },
       });

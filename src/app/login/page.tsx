@@ -20,7 +20,7 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: (data: LoginInput) => api.post('/api/auth/login', data),
     onSuccess() {
-      router.replace('/');
+      router.replace('/dashboard');
       router.refresh();
     },
     onError(error: Error) {
@@ -38,7 +38,17 @@ export default function LoginPage() {
   const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
 
   return (
-    <AuthShell title="Entrar" subtitle="Acesse sua conta">
+    <AuthShell
+      title="Entrar"
+      subtitle="Acesse sua conta para acompanhar sua inflação"
+      brandHeadline="Bem-vindo de volta"
+      brandSubtitle="Acompanhe a inflação do seu próprio bolso e compare com o IPCA oficial."
+      bullets={[
+        'Importe suas NF-e, NFC-e e NFS-e em segundos',
+        'Compare seus gastos com a inflação oficial (IPCA)',
+        'Acompanhe a inflação por item e categoria',
+      ]}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -75,9 +85,9 @@ export default function LoginPage() {
             Entrar
           </PrimaryButton>
           <Text fontSize="sm" color="fg.muted" textAlign="center">
-            Não tem conta?{' '}
-            <CLink asChild color="teal.500" fontWeight="medium">
-              <NextLink href="/register">Cadastre-se</NextLink>
+            Não tem uma conta?{' '}
+            <CLink asChild color="teal.600" fontWeight="medium">
+              <NextLink href="/register">Criar conta</NextLink>
             </CLink>
           </Text>
         </Stack>

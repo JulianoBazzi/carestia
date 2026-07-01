@@ -16,6 +16,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const active = typeof body.active === 'boolean' ? body.active : undefined;
   if (!name) {
     return NextResponse.json(
       { message: 'Nome é obrigatório.' },
@@ -24,7 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   try {
-    const count = await updateCategory(id, name);
+    const count = await updateCategory(id, name, active);
     if (count === 0) {
       return NextResponse.json(
         { message: 'Categoria não encontrada.' },

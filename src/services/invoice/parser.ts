@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 
-export type InvoiceType = 'nfe' | 'nfse';
+export type InvoiceType = 'nfe' | 'nfce' | 'nfse' | 'nf3e';
 
 export interface ICompanyDTO {
   document: string; // CNPJ
@@ -16,8 +16,8 @@ export interface ICompanyDTO {
 }
 
 export interface IItemDTO {
-  type: 'product' | 'service';
-  referenceCode: string; // NCM (product) | cTribNac (service)
+  type: 'product' | 'service' | 'energy';
+  referenceCode: string; // NCM (product) | cTribNac (service) | cClass (energia)
   name: string;
   unit?: string;
   nbsCode?: string;
@@ -27,13 +27,22 @@ export interface IItemDTO {
   totalValue: string; // raw decimal
 }
 
+export interface IInvoiceLocation {
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  ibgeCode?: string;
+}
+
 export interface IInvoiceDTO {
   model: InvoiceType;
   number: string;
   series?: string;
   accessKey: string;
   issuedAt: string;
-  totalValue: string; // raw decimal
+  totalValue: string; // raw decimal (transitório — não é persistido)
+  /** Local da compra/consumo (energia usa o acessante; demais herdam o emitente). */
+  location?: IInvoiceLocation;
 }
 
 export interface IParsedInvoice {
@@ -60,18 +69,27 @@ function str(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+/** NF-e (modelo 55) e NFC-e (modelo 65) compartilham a mesma estrutura; o modelo
+ * é distinguido por `ide.mod`. */
+function nfeModel(infNFe: { ide?: { mod?: unknown } } | undefined): 'nfe' | 'nfce' {
+  return str(infNFe?.ide?.mod) === '65' ? 'nfce' : 'nfe';
+}
+
 export function detectType(xml: string): InvoiceType {
   const obj = parser.parse(xml);
-  if (obj.nfeProc || obj.NFe) return 'nfe';
+  const infNFe = obj.nfeProc?.NFe?.infNFe ?? obj.NFe?.infNFe;
+  if (infNFe) return nfeModel(infNFe);
+  if (obj.nf3eProc || obj.NF3e) return 'nf3e';
   if (obj.NFSe) return 'nfse';
-  throw new Error('XML não reconhecido como NF-e nem NFS-e.');
+  throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e nem NFS-e.');
 }
 
 export function parseXml(xml: string): IParsedInvoice {
   const obj = parser.parse(xml);
   if (obj.nfeProc || obj.NFe) return parseNFe(obj);
+  if (obj.nf3eProc || obj.NF3e) return parseNF3e(obj);
   if (obj.NFSe) return parseNFSe(obj);
-  throw new Error('XML não reconhecido como NF-e nem NFS-e.');
+  throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e nem NFS-e.');
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: estrutura XML dinâmica
@@ -111,7 +129,7 @@ export function parseNFe(obj: any): IParsedInvoice {
   });
 
   const invoice: IInvoiceDTO = {
-    model: 'nfe',
+    model: nfeModel(infNFe),
     number: str(infNFe.ide?.nNF),
     series: infNFe.ide?.serie ? str(infNFe.ide.serie) : undefined,
     accessKey,
@@ -168,4 +186,89 @@ export function parseNFSe(obj: any): IParsedInvoice {
   };
 
   return { company, invoice, items: [item] };
+}
+
+/** Rótulo padrão por família de cClass da NF3e (usado quando não há descrição no item). */
+export function cClassLabel(cClass: string): string {
+  const g = cClass.slice(0, 3);
+  if (g === '060') return 'Consumo de energia elétrica';
+  if (cClass.startsWith('56')) return 'Energia injetada (GD)';
+  if (g === '064') return 'Adicional de bandeira tarifária';
+  if (g === '080') return 'Contribuição de Iluminação Pública';
+  return 'Item da conta de energia';
+}
+
+/**
+ * NF3e (Nota Fiscal de Energia Elétrica Eletrônica, modelo 66).
+ * Estrutura análoga à NF-e, mas com `<infNF3e>`, emitente = distribuidora, itens
+ * em `det/detItem` classificados por `cClass` (sem NCM) e medidos em kWh.
+ * Privacy-first: guardamos o preço unitário (R$/kWh = vItem/qFaturada), descartando
+ * a quantidade consumida; o local de consumo (acessante) vira o índice regional.
+ * Obs.: nomes de tags conforme MOC NF3e — ajustar contra um XML real se necessário.
+ *
+ * biome-ignore lint/suspicious/noExplicitAny: estrutura XML dinâmica
+ */
+export function parseNF3e(obj: any): IParsedInvoice {
+  const infNF3e = obj.nf3eProc?.NF3e?.infNF3e ?? obj.NF3e?.infNF3e;
+  if (!infNF3e) throw new Error('infNF3e ausente no XML da NF3e.');
+
+  const emit = infNF3e.emit ?? {};
+  const addr = emit.enderEmit ?? {};
+  const accessKey = str(infNF3e['@_Id']).replace(/^NF3e/, '');
+
+  const company: ICompanyDTO = {
+    document: str(emit.CNPJ),
+    socialName: str(emit.xNome),
+    fantasyName: emit.xFant ? str(emit.xFant) : undefined,
+    street: addr.xLgr ? str(addr.xLgr) : undefined,
+    number: addr.nro ? str(addr.nro) : undefined,
+    neighborhood: addr.xBairro ? str(addr.xBairro) : undefined,
+    city: addr.xMun ? str(addr.xMun) : undefined,
+    ibgeCode: addr.cMun ? str(addr.cMun) : undefined,
+    state: addr.UF ? str(addr.UF) : undefined,
+    zipcode: addr.CEP ? str(addr.CEP) : undefined,
+  };
+
+  // Local de consumo = endereço do acessante (anonimizado: bairro/cidade/UF).
+  const acess = infNF3e.acessante ?? infNF3e.dest ?? {};
+  const acessAddr = acess.enderAcessante ?? acess.ender ?? acess.enderNac ?? {};
+  const location = {
+    neighborhood: acessAddr.xBairro ? str(acessAddr.xBairro) : undefined,
+    city: acessAddr.xMun ? str(acessAddr.xMun) : undefined,
+    state: acessAddr.UF ? str(acessAddr.UF) : undefined,
+    ibgeCode: acessAddr.cMun ? str(acessAddr.cMun) : undefined,
+  };
+
+  const items: IItemDTO[] = toArray(infNF3e.det).map((det) => {
+    const di = det.detItem ?? det.det ?? det;
+    const cClass = str(di.cClass);
+    const description = str(di.xProd ?? di.descricao ?? di.xDesc ?? '') || cClassLabel(cClass);
+    const unit = str(di.uMed ?? di.uCom) || 'kWh';
+    const qFaturada = Number(str(di.qFaturada ?? di.qCom ?? '0'));
+    const vItem = str(di.vItem ?? di.vProd ?? '0');
+    // Preço unitário R$/kWh = valor do item ÷ quantidade faturada (quando houver).
+    const unitValue = qFaturada > 0 ? String(Number(vItem) / qFaturada) : vItem;
+    return {
+      type: 'energy' as const,
+      referenceCode: cClass,
+      name: description,
+      unit,
+      description,
+      quantity: str(qFaturada), // transitório — não persistido
+      unitValue,
+      totalValue: vItem, // transitório
+    };
+  });
+
+  const invoice: IInvoiceDTO = {
+    model: 'nf3e',
+    number: str(infNF3e.ide?.nNF),
+    series: infNF3e.ide?.serie ? str(infNF3e.ide.serie) : undefined,
+    accessKey,
+    issuedAt: str(infNF3e.ide?.dhEmi),
+    totalValue: str(infNF3e.total?.vNF ?? '0'),
+    location,
+  };
+
+  return { company, invoice, items };
 }

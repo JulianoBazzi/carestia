@@ -1,7 +1,12 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
-import { getCompany, type ICompanyUpdate, updateCompany } from '~/services/management';
+import {
+  deleteCompany,
+  getCompany,
+  type ICompanyUpdate,
+  updateCompany,
+} from '~/services/management';
 
 export const runtime = 'nodejs';
 
@@ -57,6 +62,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const count = await updateCompany(id, data);
+  if (count === 0) {
+    return NextResponse.json(
+      { message: 'Empresa não encontrada.' },
+      { status: StatusCodes.NOT_FOUND },
+    );
+  }
+  return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
+  }
+
+  const { id } = await params;
+  const count = await deleteCompany(id);
   if (count === 0) {
     return NextResponse.json(
       { message: 'Empresa não encontrada.' },
