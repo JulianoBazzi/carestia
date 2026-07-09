@@ -10,6 +10,7 @@ import {
   Table,
   Text,
 } from '@chakra-ui/react';
+import { useLocalStorage } from '@julianobazzi/nextjs-utils';
 import type { QueryObserverOptions, UseQueryResult } from '@tanstack/react-query';
 import {
   type ColumnDef,
@@ -66,9 +67,11 @@ export function TableWithService<T extends IEntityBase, P extends IParamsRequest
   onSearch,
   onRowClick,
 }: ITableWithServiceProps<T, P>) {
+  // Page size é uma preferência de UI: persiste entre visitas/sessões.
+  const [storedPageSize, setStoredPageSize] = useLocalStorage('table:pageSize', pageSizeDefault);
   const [{ pageIndex, pageSize }, setPagination] = useState<PaginationState>({
     pageIndex: 0,
-    pageSize: pageSizeDefault,
+    pageSize: storedPageSize,
   });
   const [sorting, setSorting] = useState<SortingState>([orderBy]);
 
@@ -207,7 +210,11 @@ export function TableWithService<T extends IEntityBase, P extends IParamsRequest
             <NativeSelect.Root size="sm" maxW="20">
               <NativeSelect.Field
                 value={String(pageSize)}
-                onChange={(e) => setPagination({ pageIndex: 0, pageSize: Number(e.target.value) })}
+                onChange={(e) => {
+                  const size = Number(e.target.value);
+                  setStoredPageSize(size);
+                  setPagination({ pageIndex: 0, pageSize: size });
+                }}
               >
                 {pageSizes.map((size) => (
                   <option key={size} value={size}>

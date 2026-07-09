@@ -10,15 +10,16 @@ import {
   Input,
   NativeSelect,
   SimpleGrid,
-  Spinner,
+  Skeleton,
   Stack,
   Text,
 } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
 import NextLink from 'next/link';
 import { useState } from 'react';
-import { LuSearch, LuZap } from 'react-icons/lu';
+import { LuChartLine, LuMapPin, LuSearch, LuZap } from 'react-icons/lu';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
+import { EmptyState } from '~/components/EmptyState';
 import { PublicHeader } from '~/components/public/PublicHeader';
 import { formatPrice } from '~/lib/format';
 import { api } from '~/services/apiClient';
@@ -52,6 +53,23 @@ function MiniBars({ values }: { values: number[] }) {
   );
 }
 
+function PriceCardSkeleton() {
+  return (
+    <Card.Root bg="bg.surface">
+      <Card.Body>
+        <Stack gap="3">
+          <Stack gap="1">
+            <Skeleton h="4" w="60%" />
+            <Skeleton h="3" w="40%" />
+          </Stack>
+          <Skeleton h="7" w="50%" />
+          <Skeleton h="12" w="full" />
+        </Stack>
+      </Card.Body>
+    </Card.Root>
+  );
+}
+
 export function PublicHome() {
   const [state, setState] = useState('');
   const [city, setCity] = useState('');
@@ -61,7 +79,11 @@ export function PublicHome() {
     queryKey: ['public_prices', state, city, search],
     queryFn: async () => {
       const { data } = await api.get('/api/public/prices', {
-        params: { state: state || undefined, city: city || undefined, search: search || undefined },
+        params: {
+          state: state || undefined,
+          city: city || undefined,
+          search: search || undefined,
+        },
       });
       return data.data as { prices: IPublicPrice[]; states: string[] };
     },
@@ -69,9 +91,16 @@ export function PublicHome() {
 
   const prices = data?.prices ?? [];
   const states = data?.states ?? [];
+  const hasFilters = Boolean(state || city || search);
+
+  const clearFilters = () => {
+    setState('');
+    setCity('');
+    setSearch('');
+  };
 
   return (
-    <Box minH="100dvh" bg="bg.app">
+    <Box minH="100dvh" bg="bg.app" display="flex" flexDirection="column">
       <PublicHeader />
 
       <Box
@@ -139,7 +168,7 @@ export function PublicHome() {
         </Stack>
       </Box>
 
-      <Box px={{ base: 4, md: 8 }} py={{ base: 8, md: 12 }}>
+      <Box px={{ base: 4, md: 8 }} py={{ base: 8, md: 12 }} flex="1">
         <Stack maxW="6xl" mx="auto" gap="5">
           <Stack gap="0.5">
             <Heading size="lg" fontFamily="heading">
@@ -151,13 +180,40 @@ export function PublicHome() {
           </Stack>
 
           {isLoading ? (
-            <Stack align="center" py="16">
-              <Spinner />
-            </Stack>
+            <SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} gap="4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: skeletons estáticos
+                <PriceCardSkeleton key={i} />
+              ))}
+            </SimpleGrid>
           ) : prices.length === 0 ? (
-            <Text color="fg.muted" py="8">
-              Ainda não há dados suficientes para esta região. Volte em breve.
-            </Text>
+            <Card.Root bg="bg.surface">
+              <Card.Body>
+                {hasFilters ? (
+                  <EmptyState
+                    icon={<LuMapPin />}
+                    title="Nenhum resultado para esta busca"
+                    description="Não encontramos preços com esses filtros. Tente outra cidade, estado ou produto."
+                    action={
+                      <Button variant="outline" onClick={clearFilters}>
+                        Limpar filtros
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    icon={<LuChartLine />}
+                    title="Ainda estamos reunindo dados"
+                    description="Assim que mais notas forem importadas, os preços da sua região aparecem aqui. Você pode ajudar importando as suas."
+                    action={
+                      <PrimaryButton asChild>
+                        <NextLink href="/register">Criar conta grátis</NextLink>
+                      </PrimaryButton>
+                    }
+                  />
+                )}
+              </Card.Body>
+            </Card.Root>
           ) : (
             <SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} gap="4">
               {prices.map((p) => (
@@ -202,7 +258,7 @@ export function PublicHome() {
               Quer acompanhar a SUA inflação pessoal?
             </Heading>
             <Text color="whiteAlpha.700">
-              Importe suas notas e compare seus gastos com o IPCA oficial — é grátis.
+              Importe suas notas e compare seus gastos com o IPCA oficial.
             </Text>
           </Stack>
           <PrimaryButton size="lg" asChild>
@@ -219,10 +275,10 @@ export function PublicHome() {
           borderColor="whiteAlpha.300"
         >
           <Button asChild variant="plain" color="whiteAlpha.700" size="sm" px="0">
-            <NextLink href="/termos">Termos de Uso</NextLink>
+            <NextLink href="/terms">Termos de Uso</NextLink>
           </Button>
           <Button asChild variant="plain" color="whiteAlpha.700" size="sm" px="0">
-            <NextLink href="/privacidade">Política de Privacidade</NextLink>
+            <NextLink href="/privacy">Política de Privacidade</NextLink>
           </Button>
         </Flex>
       </Box>

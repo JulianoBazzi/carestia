@@ -1,6 +1,7 @@
 'use client';
 
 import { Circle, Flex, Heading, HStack, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import {
@@ -36,6 +37,7 @@ export function CategoriesCard() {
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 500);
 
   const { data: summary } = useQuery({
     queryKey: [TABLE_CATEGORIES, 'summary'],
@@ -170,7 +172,7 @@ export function CategoriesCard() {
 
       <TableWithService
         columns={columns}
-        parameters={{ search }}
+        parameters={{ search: debouncedSearch }}
         onSearch={useCategories}
         orderBy={{ id: 'name', desc: false }}
       />

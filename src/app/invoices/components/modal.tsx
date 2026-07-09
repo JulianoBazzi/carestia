@@ -10,10 +10,10 @@ import {
   Icon,
   NativeSelect,
   SimpleGrid,
-  Spinner,
   Stack,
   Text,
 } from '@chakra-ui/react';
+import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import { type Ref, useImperativeHandle, useRef, useState } from 'react';
 import { LuFileText, LuPlus, LuShieldCheck, LuTrash2, LuZap } from 'react-icons/lu';
@@ -23,8 +23,10 @@ import { ActionIconButton } from '~/components/Button/IconButton';
 import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/ConfirmDialog';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
 import { Input } from '~/components/Input';
+import { LoadingState } from '~/components/LoadingState';
 import { API_URL_INVOICES, TABLE_INFLATION, TABLE_INVOICES } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
+import { maskAccessKey } from '~/lib/mask';
 import { OrderByTypeEnum } from '~/models/Request/Base/IParamsRequest';
 import { api } from '~/services/apiClient';
 import { useCompanies } from '~/services/hooks/useCompanies';
@@ -88,18 +90,21 @@ const MODEL_OPTIONS: { value: Model; label: string }[] = [
   { value: 'nf3e', label: 'NF3e (energia)' },
 ];
 
-function maskKey(key: string): string {
-  if (!key || key.length < 8) return key;
-  return `${key.slice(0, 4)} •••• •••• •••• ${key.slice(-4)}`;
-}
-
 export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
   const modalRef = useRef<ModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
   const keyCounter = useRef(0);
+  // Snapshot do formulário no momento da abertura/carga, p/ detectar edição não salva.
+  const baselineRef = useRef(JSON.stringify(EMPTY));
+
+  useBeforeUnload(
+    open && JSON.stringify(form) !== baselineRef.current,
+    'A nota tem alterações não salvas. Deseja mesmo sair?',
+  );
 
   const isCreate = !form.id;
   const isEnergy = form.model === 'nf3e';
@@ -192,7 +197,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
     ref,
     () => ({
       openWithEnergyDraft(draft: IEnergyDraft) {
-        setForm({
+        const next: FormState = {
           ...EMPTY,
           model: 'nf3e',
           access_key: draft.accessKey ?? '',
@@ -208,22 +213,26 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                 },
               ]
             : [],
-        });
+        };
+        setForm(next);
+        baselineRef.current = JSON.stringify(next);
         modalRef.current?.onOpenDialog();
       },
       async onOpenDialog(invoiceId?: string) {
         if (!invoiceId) {
           setForm(EMPTY);
+          baselineRef.current = JSON.stringify(EMPTY);
           modalRef.current?.onOpenDialog();
           return;
         }
         setLoading(true);
         setForm(EMPTY);
+        baselineRef.current = JSON.stringify(EMPTY);
         modalRef.current?.onOpenDialog();
         try {
           const { data } = await api.get(`${API_URL_INVOICES}/${invoiceId}`);
           const d = data.data;
-          setForm({
+          const loaded: FormState = {
             id: d.id,
             model: d.model,
             number: d.number ?? '',
@@ -242,7 +251,9 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
               unit: String(it.unit ?? ''),
               unit_value: String(it.unit_value ?? ''),
             })),
-          });
+          };
+          setForm(loaded);
+          baselineRef.current = JSON.stringify(loaded);
         } catch (e) {
           errorFeedbackToast('Nota', e as Error);
           modalRef.current?.onCloseDialog();
@@ -255,6 +266,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
   );
 
   const accent = isEnergy ? 'energy' : 'teal';
+  const busy = saveMutation.isPending || removeMutation.isPending;
 
   return (
     <Modal
@@ -262,6 +274,8 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
       size="xl"
       onSubmit={() => saveMutation.mutate()}
       onClose={() => setForm(EMPTY)}
+      onOpenChange={setOpen}
+      busy={busy}
     >
       <Dialog.Header>
         <HStack gap="3">
@@ -280,7 +294,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
             </Dialog.Title>
             {!isCreate && form.access_key && (
               <Text fontSize="xs" color="fg.muted" fontFamily="mono">
-                {maskKey(form.access_key)}
+                {maskAccessKey(form.access_key)}
               </Text>
             )}
           </Stack>
@@ -289,16 +303,14 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
 
       <Dialog.Body>
         {loading ? (
-          <Stack align="center" py="10">
-            <Spinner />
-          </Stack>
+          <LoadingState size="sm" label="Carregando nota…" />
         ) : (
           <Stack gap="5">
             <Stack gap="3">
               <SimpleGrid columns={{ base: 1, md: 4 }} gap="3">
                 <Field.Root>
                   <Field.Label>Tipo de documento</Field.Label>
-                  <NativeSelect.Root>
+                  <NativeSelect.Root disabled={busy}>
                     <NativeSelect.Field
                       value={form.model}
                       onChange={(e) => patch({ model: e.target.value as Model })}
@@ -315,12 +327,14 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                 <Input
                   name="number"
                   label="Número"
+                  disabled={busy}
                   value={form.number}
                   onChange={(e) => patch({ number: e.target.value })}
                 />
                 <Input
                   name="series"
                   label="Série"
+                  disabled={busy}
                   value={form.series}
                   onChange={(e) => patch({ series: e.target.value })}
                 />
@@ -328,6 +342,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                   name="issued_at"
                   label="Data de emissão"
                   type="date"
+                  disabled={busy}
                   value={form.issued_at}
                   onChange={(e) => patch({ issued_at: e.target.value })}
                 />
@@ -336,7 +351,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
               <Field.Root>
                 <Field.Label>{isEnergy ? 'Distribuidora (emitente)' : 'Emitente'}</Field.Label>
                 {isCreate ? (
-                  <NativeSelect.Root>
+                  <NativeSelect.Root disabled={busy}>
                     <NativeSelect.Field
                       value={form.company_id}
                       onChange={(e) => patch({ company_id: e.target.value })}
@@ -362,18 +377,21 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                 <Input
                   name="neighborhood"
                   label="Bairro"
+                  disabled={busy}
                   value={form.neighborhood}
                   onChange={(e) => patch({ neighborhood: e.target.value })}
                 />
                 <Input
                   name="city"
                   label="Cidade"
+                  disabled={busy}
                   value={form.city}
                   onChange={(e) => patch({ city: e.target.value })}
                 />
                 <Input
                   name="state"
                   label="Estado"
+                  disabled={busy}
                   value={form.state}
                   onChange={(e) => patch({ state: e.target.value })}
                 />
@@ -401,7 +419,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                 <Text fontWeight="semibold" fontSize="sm">
                   Itens da {isEnergy ? 'fatura' : 'nota'} ({form.items.length})
                 </Text>
-                <SecondaryButton type="button" size="xs" onClick={addItem}>
+                <SecondaryButton type="button" size="xs" disabled={busy} onClick={addItem}>
                   <LuPlus /> Adicionar item
                 </SecondaryButton>
               </Flex>
@@ -418,6 +436,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                         <Input
                           name={`desc-${index}`}
                           label={index === 0 ? 'Descrição' : undefined}
+                          disabled={busy}
                           value={it.description}
                           onChange={(e) => updateItem(index, { description: e.target.value })}
                         />
@@ -427,6 +446,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                           <Input
                             name={`ncm-${index}`}
                             label={index === 0 ? 'NCM' : undefined}
+                            disabled={busy}
                             value={it.reference_code}
                             onChange={(e) => updateItem(index, { reference_code: e.target.value })}
                           />
@@ -436,6 +456,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                         <Input
                           name={`unit-${index}`}
                           label={index === 0 ? 'Unidade' : undefined}
+                          disabled={busy}
                           value={it.unit}
                           onChange={(e) => updateItem(index, { unit: e.target.value })}
                         />
@@ -444,6 +465,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                         <Input
                           name={`val-${index}`}
                           label={index === 0 ? (isEnergy ? 'R$/kWh' : 'Valor unit.') : undefined}
+                          disabled={busy}
                           value={it.unit_value}
                           onChange={(e) => updateItem(index, { unit_value: e.target.value })}
                         />
@@ -451,6 +473,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                       <ActionIconButton
                         aria-label="Remover item"
                         colorPalette="red"
+                        disabled={busy}
                         onClick={() => removeItem(index)}
                       >
                         <LuTrash2 />
@@ -470,6 +493,8 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
             <SecondaryButton
               type="button"
               colorPalette="red"
+              loading={removeMutation.isPending}
+              disabled={saveMutation.isPending}
               onClick={() =>
                 confirmRef.current?.open({
                   title: 'Excluir nota?',
@@ -485,10 +510,18 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
           )}
         </Box>
         <HStack gap="2">
-          <SecondaryButton type="button" onClick={() => modalRef.current?.onCloseDialog()}>
+          <SecondaryButton
+            type="button"
+            disabled={busy}
+            onClick={() => modalRef.current?.onCloseDialog()}
+          >
             Cancelar
           </SecondaryButton>
-          <PrimaryButton type="submit" loading={saveMutation.isPending}>
+          <PrimaryButton
+            type="submit"
+            loading={saveMutation.isPending}
+            disabled={removeMutation.isPending}
+          >
             Salvar alterações
           </PrimaryButton>
         </HStack>

@@ -14,8 +14,11 @@ export interface IModalProps extends Omit<DialogRootProps, 'onOpenChange' | 'ope
   title?: string;
   onSubmit?: () => void;
   onClose?: () => void;
+  /** Notifica abertura/fechamento (inclusive fechamento imperativo via ref). */
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
   disableCloseButton?: boolean;
+  busy?: boolean;
 }
 
 export type ModalHandle = {
@@ -27,17 +30,26 @@ export function Modal({
   title,
   children,
   disableCloseButton,
+  busy,
   onSubmit,
   onClose,
+  onOpenChange,
   ref,
   ...rest
 }: IModalProps & { ref?: Ref<ModalHandle> }) {
   const [open, setOpen] = useState(false);
 
-  const onOpenDialog = useCallback(() => setOpen(true), []);
-  const onCloseDialog = useCallback(() => setOpen(false), []);
+  const onOpenDialog = useCallback(() => {
+    setOpen(true);
+    onOpenChange?.(true);
+  }, [onOpenChange]);
+  const onCloseDialog = useCallback(() => {
+    setOpen(false);
+    onOpenChange?.(false);
+  }, [onOpenChange]);
 
   function handleCloseDialog() {
+    if (busy) return;
     onClose?.();
     onCloseDialog();
   }
@@ -50,7 +62,7 @@ export function Modal({
       onOpenChange={(details) => {
         if (!details.open) handleCloseDialog();
       }}
-      closeOnEscape={!disableCloseButton}
+      closeOnEscape={!disableCloseButton && !busy}
       closeOnInteractOutside={false}
       {...rest}
     >
@@ -67,7 +79,7 @@ export function Modal({
         >
           {!disableCloseButton && (
             <Dialog.CloseTrigger asChild>
-              <CloseButton size="sm" onClick={handleCloseDialog} />
+              <CloseButton size="sm" disabled={busy} onClick={handleCloseDialog} />
             </Dialog.CloseTrigger>
           )}
           {title && (

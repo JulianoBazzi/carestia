@@ -4,6 +4,5 @@ allowBuilds:
   prisma: true
   sharp: true
 minimumReleaseAgeExclude:
-  - '@julianobazzi/nextjs-utils@1.0.3'
-  - '@julianobazzi/utils@1.0.6'
-  - axios@1.18.1
+  - '@tanstack/form-core@1.33.1'
+  - '@tanstack/react-form@1.33.1'

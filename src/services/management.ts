@@ -1,4 +1,5 @@
 import 'server-only';
+import { isValidCNPJ, onlyNumbers } from '@julianobazzi/utils';
 import { newId } from '~/lib/id';
 import { normalizeName, slugify } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
@@ -166,7 +167,7 @@ function normalizeCompanyData(data: ICompanyUpdate): ICompanyUpdate {
     }
   }
   if ('zipcode' in normalized && normalized.zipcode) {
-    normalized.zipcode = normalized.zipcode.replace(/\D/g, '').slice(0, 8) || null;
+    normalized.zipcode = onlyNumbers(normalized.zipcode).slice(0, 8) || null;
   }
   return normalized;
 }
@@ -184,8 +185,8 @@ export interface ICompanyCreate extends ICompanyUpdate {
 }
 
 export function createCompany(data: ICompanyCreate) {
-  const document = data.document.replace(/\D/g, '');
-  if (document.length !== 14) throw new Error('CNPJ inválido.');
+  const document = onlyNumbers(data.document);
+  if (!isValidCNPJ(document)) throw new Error('CNPJ inválido.');
   const normalized = normalizeCompanyData(data);
   if (!normalized.social_name) throw new Error('Razão social é obrigatória.');
   return prisma.company.create({

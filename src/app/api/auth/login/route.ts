@@ -17,7 +17,12 @@ export async function POST(req: Request) {
   const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await verifyPassword(password, user.password))) {
+  if (
+    !user ||
+    user.deleted_at ||
+    !user.active ||
+    !(await verifyPassword(password, user.password))
+  ) {
     return NextResponse.json(
       { message: 'Credenciais inválidas.' },
       { status: StatusCodes.UNAUTHORIZED },

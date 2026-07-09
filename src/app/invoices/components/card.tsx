@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, Flex, Heading, HStack, Input, NativeSelect, Stack, Text } from '@chakra-ui/react';
+import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import NextLink from 'next/link';
 import { useMemo, useRef, useState } from 'react';
@@ -14,6 +15,7 @@ import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/Confi
 import { type CustomColumnDef, TableWithService } from '~/components/Form/TableWithService';
 import { API_URL_INVOICES, TABLE_INFLATION, TABLE_INVOICES } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
+import { maskAccessKey } from '~/lib/mask';
 import type IInvoiceAPI from '~/models/Entity/Invoice/IInvoiceAPI';
 import { OrderByTypeEnum } from '~/models/Request/Base/IParamsRequest';
 import type IInvoiceParamsRequest from '~/models/Request/IInvoiceParamsRequest';
@@ -21,11 +23,6 @@ import { api } from '~/services/apiClient';
 import { useCompanies } from '~/services/hooks/useCompanies';
 import { invoiceModelInfo, useInvoices } from '~/services/hooks/useInvoices';
 import { queryClient } from '~/services/queryClient';
-
-function maskKey(key: string): string {
-  if (!key || key.length < 12) return key;
-  return `${key.slice(0, 6)}…${key.slice(-4)}`;
-}
 
 export function InvoicesCard() {
   const modalRef = useRef<InvoiceModalHandle>(null);
@@ -36,6 +33,8 @@ export function InvoicesCard() {
   const [to, setTo] = useState('');
   const [company, setCompany] = useState('');
   const [search, setSearch] = useState('');
+  // Evita refetch a cada tecla: a query usa o valor debounced; o input segue imediato.
+  const debouncedSearch = useDebounce(search, 500);
 
   const companiesQuery = useCompanies({
     perPage: 200,
@@ -97,7 +96,7 @@ export function InvoicesCard() {
               {row.original.series ? ` · Série ${row.original.series}` : ''}
             </Text>
             <Text fontSize="xs" color="fg.muted" fontFamily="mono">
-              {maskKey(row.original.access_key)}
+              {maskAccessKey(row.original.access_key)}
             </Text>
           </Stack>
         ),
@@ -260,7 +259,7 @@ export function InvoicesCard() {
           from: from || null,
           to: to || null,
           company: company || null,
-          search,
+          search: debouncedSearch,
         }}
         onSearch={useInvoices}
       />

@@ -22,6 +22,7 @@ export function PasswordInput({
   label,
   error,
   required,
+  disabled,
   autoComplete = 'current-password',
   ref,
   ...rest
@@ -43,6 +44,7 @@ export function PasswordInput({
             variant="ghost"
             size="xs"
             aria-label={visible ? 'Ocultar senha' : 'Mostrar senha'}
+            disabled={disabled}
             onClick={() => setVisible((v) => !v)}
             tabIndex={-1}
             me="-1"
@@ -57,6 +59,7 @@ export function PasswordInput({
           name={name}
           type={visible ? 'text' : 'password'}
           autoComplete={autoComplete}
+          disabled={disabled}
           {...rest}
         />
       </InputGroup>

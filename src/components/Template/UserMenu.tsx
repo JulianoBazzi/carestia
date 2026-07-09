@@ -59,7 +59,7 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
               </Menu.ItemGroupLabel>
             </Menu.ItemGroup>
             <Menu.Separator />
-            <Menu.Item value="account" disabled>
+            <Menu.Item value="account" onClick={() => router.push('/account')}>
               <LuUser />
               Minha conta
             </Menu.Item>

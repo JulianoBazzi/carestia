@@ -1,9 +1,8 @@
 'use client';
 
-import { Box, Card, Circle, Flex, Heading, HStack, Icon, Stack, Text } from '@chakra-ui/react';
+import { Card, Circle, Flex, Heading, HStack, Icon, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import { LuCheck, LuTrendingUp } from 'react-icons/lu';
-import { ColorModeButton } from '~/components/ui/color-mode';
 
 export interface AuthShellProps {
   /** Título do card de formulário (ex.: "Entrar"). */
@@ -85,10 +84,6 @@ export function AuthShell({
         p={{ base: 6, md: 10 }}
         position="relative"
       >
-        <Box position="absolute" top={4} right={4}>
-          <ColorModeButton />
-        </Box>
-
         <Card.Root
           maxW="md"
           w="full"

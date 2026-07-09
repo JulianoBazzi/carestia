@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
+import { safeRoute } from '~/lib/http';
 import {
   comparePersonalVsIpca,
   computeInflation,
@@ -12,7 +13,7 @@ import { fetchIpca } from '~/services/ipca';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export const GET = safeRoute(async () => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
@@ -36,4 +37,4 @@ export async function GET() {
       byCategory,
     },
   });
-}
+});

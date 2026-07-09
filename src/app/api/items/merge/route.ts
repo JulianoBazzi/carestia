@@ -1,9 +1,14 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getSession } from '~/lib/auth/current-user';
+import { parseBody } from '~/lib/http';
+import { zulid } from '~/schemas/lib';
 import { mergeItems } from '~/services/management';
 
 export const runtime = 'nodejs';
+
+const mergeSchema = z.object({ sourceId: zulid(), targetId: zulid() });
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -12,13 +17,11 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { sourceId, targetId } = body;
-  if (!sourceId || !targetId) {
-    return NextResponse.json(
-      { message: 'sourceId e targetId são obrigatórios.' },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+  const parsed = parseBody(mergeSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json({ message: parsed.error }, { status: StatusCodes.BAD_REQUEST });
   }
+  const { sourceId, targetId } = parsed.data;
 
   try {
     await mergeItems(sourceId, targetId);

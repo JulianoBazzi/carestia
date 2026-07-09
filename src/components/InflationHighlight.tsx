@@ -1,6 +1,6 @@
 import { Badge, Card, Heading, HStack, Icon, Stack, Stat, Text } from '@chakra-ui/react';
-import { formatPercentage } from '@julianobazzi/utils';
 import { LuTrendingUp } from 'react-icons/lu';
+import { formatPct } from '~/lib/format';
 import type { IInflation } from '~/services/invoice/analytics';
 
 function variationColor(pct: number) {
@@ -25,7 +25,7 @@ export function InflationHighlight({ inflation }: { inflation: IInflation }) {
           <Stat.Root>
             <Stat.Label>Seu índice de inflação pessoal</Stat.Label>
             <Stat.ValueText color={`${variationColor(inflation.index)}.500`}>
-              {formatPercentage(inflation.index * 100)}
+              {formatPct(inflation.index, { signed: true })}
             </Stat.ValueText>
             <Stat.HelpText>variação ponderada dos itens recomprados</Stat.HelpText>
           </Stat.Root>
@@ -42,7 +42,7 @@ export function InflationHighlight({ inflation }: { inflation: IInflation }) {
                     {item.name}
                   </Text>
                   <Badge colorPalette={variationColor(item.variationPct)}>
-                    {formatPercentage(item.variationPct * 100)}
+                    {formatPct(item.variationPct, { signed: true })}
                   </Badge>
                 </HStack>
               ))}

@@ -11,6 +11,7 @@ import {
   Text,
   Textarea,
 } from '@chakra-ui/react';
+import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { useMemo, useState } from 'react';
 import { LuInfo, LuKeyRound, LuTriangleAlert } from 'react-icons/lu';
 import { StatusBadge } from '~/components/Badge/StatusBadge';
@@ -50,6 +51,9 @@ export function InvoiceImportKey({ enabled }: { enabled: boolean }) {
   const [text, setText] = useState('');
   const [items, setItems] = useState<IKeyItem[]>([]);
   const [running, setRunning] = useState(false);
+
+  // Consulta paga em andamento: avisa antes de fechar/recarregar a aba.
+  useBeforeUnload(running, 'A importação ainda está em andamento. Deseja mesmo sair?');
 
   const parsedKeys = useMemo(() => extractKeys(text), [text]);
   const doneCount = items.filter((i) => i.status !== 'queued' && i.status !== 'consulting').length;

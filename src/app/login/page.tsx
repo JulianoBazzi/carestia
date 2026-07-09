@@ -62,6 +62,7 @@ export default function LoginPage() {
                 name={field.name}
                 type="email"
                 placeholder="E-mail"
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -74,6 +75,7 @@ export default function LoginPage() {
               <PasswordInput
                 name={field.name}
                 placeholder="Senha"
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}

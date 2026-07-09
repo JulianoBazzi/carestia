@@ -6,6 +6,7 @@ export const API_URL_INVOICES = '/api/invoices';
 export const API_URL_DASHBOARD_METRICS = '/api/dashboard/metrics';
 export const API_URL_INFLATION = '/api/inflation';
 export const API_URL_ME = '/api/auth/me';
+export const API_URL_ACCOUNT = '/api/account';
 
 // Chaves de cache do TanStack Query (primeiro elemento do queryKey)
 export const TABLE_CATEGORIES = 'categories';

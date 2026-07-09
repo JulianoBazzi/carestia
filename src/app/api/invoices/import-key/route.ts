@@ -1,3 +1,4 @@
+import { onlyNumbers } from '@julianobazzi/utils';
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const rawKeys: string[] = Array.isArray(body.keys) ? body.keys : [];
   const keys = Array.from(
-    new Set(rawKeys.map((k) => String(k).replace(/\D/g, '')).filter((k) => k.length === 44)),
+    new Set(rawKeys.map((k) => onlyNumbers(String(k))).filter((k) => k.length === 44)),
   );
 
   if (keys.length === 0) {

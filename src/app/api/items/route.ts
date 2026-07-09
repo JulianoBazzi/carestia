@@ -1,9 +1,11 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
+import { parseBody, safeRoute } from '~/lib/http';
 import { buildMeta, getPaginationParams } from '~/lib/pagination';
 import prisma from '~/lib/prisma';
-import { createItem, type IItemInput } from '~/services/management';
+import { itemSchema } from '~/schemas/item';
+import { createItem } from '~/services/management';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +13,7 @@ const P2002 = 'P2002';
 const SORTABLE = new Set(['name', 'reference_code', 'type', 'created_at', 'updated_at']);
 const TYPES = new Set(['product', 'service']);
 
-export async function GET(req: NextRequest) {
+export const GET = safeRoute(async (req: NextRequest) => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
@@ -58,7 +60,7 @@ export async function GET(req: NextRequest) {
   }));
 
   return NextResponse.json({ data, meta: buildMeta(page, limit, total) });
-}
+});
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -67,26 +69,13 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const type = TYPES.has(body.type) ? (body.type as 'product' | 'service') : null;
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const reference_code = typeof body.reference_code === 'string' ? body.reference_code.trim() : '';
-  if (!type || !name || !reference_code) {
-    return NextResponse.json(
-      { message: 'Tipo, nome e código são obrigatórios.' },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+  const parsed = parseBody(itemSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json({ message: parsed.error }, { status: StatusCodes.BAD_REQUEST });
   }
 
-  const data: IItemInput = {
-    type,
-    name,
-    reference_code,
-    category_id: typeof body.category_id === 'string' && body.category_id ? body.category_id : null,
-    unit: typeof body.unit === 'string' && body.unit ? body.unit : null,
-  };
-
   try {
-    const item = await createItem(data);
+    const item = await createItem(parsed.data);
     return NextResponse.json({ data: item }, { status: StatusCodes.CREATED });
   } catch (e) {
     if (

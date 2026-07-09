@@ -1,6 +1,7 @@
 'use client';
 
 import { Box, Dialog, Flex, Stack, Text } from '@chakra-ui/react';
+import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
@@ -25,6 +26,7 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
   const modalRef = useRef<ModalHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [editing, setEditing] = useState<ICategoryAPI | undefined>();
+  const [open, setOpen] = useState(false);
 
   const isEditing = !!editing;
 
@@ -55,6 +57,9 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
   });
 
   const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
+  const isDirty = useSelector(form.store, (state) => state.isDirty);
+
+  useBeforeUnload(open && isDirty, 'Você tem alterações não salvas. Deseja mesmo sair?');
 
   useImperativeHandle(
     ref,
@@ -73,6 +78,8 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
       ref={modalRef}
       title={isEditing ? 'Editar categoria' : 'Nova categoria'}
       onSubmit={() => form.handleSubmit()}
+      onOpenChange={setOpen}
+      busy={isSubmitting}
     >
       <Dialog.Body>
         <Stack gap="4">
@@ -83,6 +90,7 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
                 label="Nome da categoria"
                 placeholder="Ex.: Supermercado"
                 required
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -108,14 +116,22 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
                     Itens de categorias inativas não entram no cálculo da inflação.
                   </Text>
                 </Box>
-                <Toggle checked={field.state.value} onChange={(v) => field.handleChange(v)} />
+                <Toggle
+                  checked={field.state.value}
+                  onChange={(v) => field.handleChange(v)}
+                  disabled={isSubmitting}
+                />
               </Flex>
             )}
           </form.Field>
         </Stack>
       </Dialog.Body>
       <Dialog.Footer gap="2">
-        <SecondaryButton type="button" onClick={() => modalRef.current?.onCloseDialog()}>
+        <SecondaryButton
+          type="button"
+          disabled={isSubmitting}
+          onClick={() => modalRef.current?.onCloseDialog()}
+        >
           Cancelar
         </SecondaryButton>
         <PrimaryButton type="submit" loading={isSubmitting}>

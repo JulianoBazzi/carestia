@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Flex, Heading, SegmentGroup, Spinner, Stack, Table, Text } from '@chakra-ui/react';
+import { Card, Flex, Heading, SegmentGroup, Stack, Table, Text } from '@chakra-ui/react';
 import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -9,6 +9,8 @@ import { AdSlot } from '~/components/Ad/AdSlot';
 import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { InflationCompareChart } from '~/components/charts/InflationCompareChart';
+import { EmptyState } from '~/components/EmptyState';
+import { LoadingState } from '~/components/LoadingState';
 import { StatCard } from '~/components/StatCard';
 import { formatPct, formatPp, formatPrice } from '~/lib/format';
 import { useInflation } from '~/services/hooks/useInflation';
@@ -44,14 +46,10 @@ export function DashboardCard() {
   }, [data, typeFilter]);
 
   if (isLoading || !data) {
-    return (
-      <Stack align="center" py="20">
-        <Spinner />
-      </Stack>
-    );
+    return <LoadingState label="Calculando sua inflação…" />;
   }
 
-  const { comparison, series, items } = data;
+  const { comparison, series, items, byCategory, ipcaAvailable } = data;
   const ipcaAcc = comparison.ipca;
 
   return (
@@ -84,9 +82,10 @@ export function DashboardCard() {
         />
         <StatCard
           label="IPCA (oficial)"
-          value={formatPct(comparison.ipca, { signed: true })}
+          value={ipcaAvailable ? formatPct(comparison.ipca, { signed: true }) : '—'}
           icon={<LuScale size={18} />}
           colorPalette="gray"
+          helpText={ipcaAvailable ? undefined : 'IPCA indisponível no momento'}
         />
         <StatCard
           label="Diferença"
@@ -125,6 +124,53 @@ export function DashboardCard() {
           <Card.Root bg="bg.surface">
             <Card.Body>
               <Stack gap="4">
+                <Heading size="sm" fontFamily="heading">
+                  Inflação por categoria
+                </Heading>
+                {byCategory.length === 0 ? (
+                  <EmptyState
+                    icon={<LuPercent />}
+                    title="Sem categorias ainda"
+                    description="Categorize seus itens e importe ao menos dois preços para ver a inflação por categoria."
+                  />
+                ) : (
+                  <Table.Root size="sm">
+                    <Table.Header>
+                      <Table.Row>
+                        <Table.ColumnHeader>Categoria</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="center">Itens</Table.ColumnHeader>
+                        <Table.ColumnHeader textAlign="end">Inflação</Table.ColumnHeader>
+                      </Table.Row>
+                    </Table.Header>
+                    <Table.Body>
+                      {byCategory.map((cat) => (
+                        <Table.Row key={cat.category}>
+                          <Table.Cell>
+                            <Text fontWeight="medium" lineClamp={1}>
+                              {cat.category}
+                            </Text>
+                          </Table.Cell>
+                          <Table.Cell textAlign="center">{cat.itemCount}</Table.Cell>
+                          <Table.Cell textAlign="end">
+                            <Text
+                              color={cat.index >= 0 ? 'price.up' : 'price.down'}
+                              fontWeight="semibold"
+                            >
+                              {formatPct(cat.index, { signed: true })}
+                            </Text>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Root>
+                )}
+              </Stack>
+            </Card.Body>
+          </Card.Root>
+
+          <Card.Root bg="bg.surface">
+            <Card.Body>
+              <Stack gap="4">
                 <Flex justify="space-between" align="center" gap="3" wrap="wrap">
                   <Heading size="sm" fontFamily="heading">
                     Inflação item a item vs IPCA
@@ -145,9 +191,11 @@ export function DashboardCard() {
                 </Flex>
 
                 {filteredItems.length === 0 ? (
-                  <Text fontSize="sm" color="fg.muted" py="4">
-                    Nenhum item com histórico suficiente ainda.
-                  </Text>
+                  <EmptyState
+                    icon={<LuListChecks />}
+                    title="Nenhum item com histórico suficiente"
+                    description="Importe notas com o mesmo item ao menos duas vezes para calcular a variação."
+                  />
                 ) : (
                   <Table.Root size="sm" interactive>
                     <Table.Header>

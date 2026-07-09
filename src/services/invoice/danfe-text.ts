@@ -3,6 +3,8 @@
  * Separado de `danfe-pdf.ts` (que carrega o unpdf) para ser testável isoladamente.
  */
 
+import { onlyNumbers } from '@julianobazzi/utils';
+
 const DISTRIBUIDORAS = [
   'Energisa',
   'CPFL',
@@ -39,7 +41,7 @@ export function extractDanfeFields(text: string): IDanfeDraft {
   // Chave de acesso: 44 dígitos (podem vir separados por espaços).
   const digits = flat.replace(/[^\d ]/g, ' ');
   const keyMatch = digits.match(/(?:\d[ ]?){44}/);
-  const accessKey = keyMatch ? keyMatch[0].replace(/\D/g, '').slice(0, 44) : undefined;
+  const accessKey = keyMatch ? onlyNumbers(keyMatch[0]).slice(0, 44) : undefined;
 
   // Competência / referência: MM/AAAA.
   const comp = flat.match(

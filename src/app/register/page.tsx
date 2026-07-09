@@ -61,6 +61,7 @@ export default function RegisterPage() {
               <Input
                 name={field.name}
                 placeholder="Nome"
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -74,6 +75,7 @@ export default function RegisterPage() {
                 name={field.name}
                 type="email"
                 placeholder="E-mail"
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -87,6 +89,7 @@ export default function RegisterPage() {
                 name={field.name}
                 placeholder="Senha"
                 autoComplete="new-password"
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}

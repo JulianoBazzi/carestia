@@ -1,8 +1,8 @@
 'use client';
 
 import { Box, Circle, Link as CLink, Flex, Heading, HStack } from '@chakra-ui/react';
+import { useActiveRoute } from '@julianobazzi/nextjs-utils/next';
 import NextLink from 'next/link';
-import { usePathname } from 'next/navigation';
 import type { IconType } from 'react-icons';
 import {
   LuBuilding2,
@@ -13,7 +13,6 @@ import {
   LuTrendingUp,
 } from 'react-icons/lu';
 import { UserMenu } from '~/components/Template/UserMenu';
-import { ColorModeButton } from '~/components/ui/color-mode';
 
 const links: { href: string; label: string; icon: IconType }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LuLayoutDashboard },
@@ -23,13 +22,32 @@ const links: { href: string; label: string; icon: IconType }[] = [
   { href: '/items', label: 'Itens', icon: LuTags },
 ];
 
-function isActive(pathname: string, href: string): boolean {
-  return href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
+function NavLink({ href, label, icon: Icon }: { href: string; label: string; icon: IconType }) {
+  // Dashboard casa exato; demais abas ficam ativas também nas sub-rotas (ex.: /invoices/import).
+  const active = useActiveRoute(href, { exact: href === '/dashboard' });
+  return (
+    <CLink
+      asChild
+      fontSize="sm"
+      px={3}
+      py={2}
+      borderRadius="lg"
+      fontWeight={active ? 'semibold' : 'medium'}
+      color={active ? 'teal.700' : 'fg.muted'}
+      bg={active ? { base: 'teal.50', _dark: 'teal.950' } : 'transparent'}
+      _hover={{ textDecoration: 'none', color: 'teal.700' }}
+    >
+      <NextLink href={href}>
+        <HStack gap={1.5}>
+          <Icon size={16} />
+          <span>{label}</span>
+        </HStack>
+      </NextLink>
+    </CLink>
+  );
 }
 
 export function Header({ user }: { user: { name: string; email: string } }) {
-  const pathname = usePathname();
-
   return (
     <Box
       as="header"
@@ -64,34 +82,12 @@ export function Header({ user }: { user: { name: string; email: string } }) {
             </NextLink>
           </CLink>
           <HStack gap={1} as="nav">
-            {links.map((l) => {
-              const active = isActive(pathname, l.href);
-              return (
-                <CLink
-                  key={l.href}
-                  asChild
-                  fontSize="sm"
-                  px={3}
-                  py={2}
-                  borderRadius="lg"
-                  fontWeight={active ? 'semibold' : 'medium'}
-                  color={active ? 'teal.700' : 'fg.muted'}
-                  bg={active ? { base: 'teal.50', _dark: 'teal.950' } : 'transparent'}
-                  _hover={{ textDecoration: 'none', color: 'teal.700' }}
-                >
-                  <NextLink href={l.href}>
-                    <HStack gap={1.5}>
-                      <l.icon size={16} />
-                      <span>{l.label}</span>
-                    </HStack>
-                  </NextLink>
-                </CLink>
-              );
-            })}
+            {links.map((l) => (
+              <NavLink key={l.href} href={l.href} label={l.label} icon={l.icon} />
+            ))}
           </HStack>
         </HStack>
         <HStack gap={2}>
-          <ColorModeButton />
           <UserMenu name={user.name} email={user.email} />
         </HStack>
       </Flex>

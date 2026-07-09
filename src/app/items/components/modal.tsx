@@ -1,6 +1,7 @@
 'use client';
 
 import { Dialog, Field, NativeSelect, SegmentGroup, Stack } from '@chakra-ui/react';
+import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
@@ -34,6 +35,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
   const modalRef = useRef<ModalHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [editing, setEditing] = useState<IItemAPI | undefined>();
+  const [open, setOpen] = useState(false);
 
   const isEditing = !!editing;
   const categoriesQuery = useCategories({
@@ -70,6 +72,9 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
   });
 
   const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
+  const isDirty = useSelector(form.store, (state) => state.isDirty);
+
+  useBeforeUnload(open && isDirty, 'Você tem alterações não salvas. Deseja mesmo sair?');
 
   useImperativeHandle(
     ref,
@@ -98,6 +103,8 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
       ref={modalRef}
       title={isEditing ? 'Editar item' : 'Novo item'}
       onSubmit={() => form.handleSubmit()}
+      onOpenChange={setOpen}
+      busy={isSubmitting}
     >
       <Dialog.Body>
         <Stack gap="4">
@@ -110,6 +117,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
                   onValueChange={(e) =>
                     field.handleChange((e.value as 'product' | 'service') ?? 'product')
                   }
+                  disabled={isSubmitting}
                   width="full"
                 >
                   <SegmentGroup.Indicator />
@@ -133,6 +141,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
                 label="Nome do item"
                 placeholder="Ex.: Arroz branco tipo 1 - 5kg"
                 required
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -148,6 +157,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
                 label="Código NCM / referência"
                 placeholder="Ex.: 1006.30.21"
                 required
+                disabled={isSubmitting}
                 value={field.state.value}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -160,7 +170,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
             {(field) => (
               <Field.Root>
                 <Field.Label>Categoria</Field.Label>
-                <NativeSelect.Root>
+                <NativeSelect.Root disabled={isSubmitting}>
                   <NativeSelect.Field
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}
@@ -180,7 +190,11 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
         </Stack>
       </Dialog.Body>
       <Dialog.Footer gap="2">
-        <SecondaryButton type="button" onClick={() => modalRef.current?.onCloseDialog()}>
+        <SecondaryButton
+          type="button"
+          disabled={isSubmitting}
+          onClick={() => modalRef.current?.onCloseDialog()}
+        >
           Cancelar
         </SecondaryButton>
         <PrimaryButton type="submit" loading={isSubmitting}>

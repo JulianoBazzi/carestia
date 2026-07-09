@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
+import { safeRoute } from '~/lib/http';
 import { buildMeta } from '~/lib/pagination';
 import {
   createInvoiceManual,
@@ -18,7 +19,7 @@ function parseType(v: string | null): 'nfe' | 'nfce' | 'nfse' | 'nf3e' | undefin
   return v === 'nfe' || v === 'nfce' || v === 'nfse' || v === 'nf3e' ? v : undefined;
 }
 
-export async function GET(req: NextRequest) {
+export const GET = safeRoute(async (req: NextRequest) => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
   }));
 
   return NextResponse.json({ data, meta: buildMeta(page, pageSize, total) });
-}
+});
 
 export async function POST(req: Request) {
   const session = await getSession();

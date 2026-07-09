@@ -1,6 +1,7 @@
 'use client';
 
 import { Dialog, SimpleGrid, Stack } from '@chakra-ui/react';
+import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
@@ -45,6 +46,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
   const modalRef = useRef<ModalHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [editing, setEditing] = useState<ICompanyAPI | undefined>();
+  const [open, setOpen] = useState(false);
 
   const isEditing = !!editing;
 
@@ -76,6 +78,9 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
   });
 
   const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
+  const isDirty = useSelector(form.store, (state) => state.isDirty);
+
+  useBeforeUnload(open && isDirty, 'Você tem alterações não salvas. Deseja mesmo sair?');
 
   useImperativeHandle(
     ref,
@@ -108,6 +113,8 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
       ref={modalRef}
       title={isEditing ? 'Editar empresa' : 'Nova empresa'}
       onSubmit={() => form.handleSubmit()}
+      onOpenChange={setOpen}
+      busy={isSubmitting}
       size="lg"
     >
       <Dialog.Body>
@@ -120,7 +127,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                   label="CNPJ"
                   placeholder="00.000.000/0000-00"
                   required={!isEditing}
-                  disabled={isEditing}
+                  disabled={isEditing || isSubmitting}
                   value={field.state.value ?? ''}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -133,6 +140,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                 <Input
                   name={field.name}
                   label="Nome fantasia"
+                  disabled={isSubmitting}
                   value={field.state.value ?? ''}
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
@@ -147,6 +155,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                 name={field.name}
                 label="Razão social"
                 required
+                disabled={isSubmitting}
                 value={field.state.value ?? ''}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
@@ -162,6 +171,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                   <Input
                     name={field.name}
                     label={label}
+                    disabled={isSubmitting}
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
@@ -173,7 +183,11 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
         </Stack>
       </Dialog.Body>
       <Dialog.Footer gap="2">
-        <SecondaryButton type="button" onClick={() => modalRef.current?.onCloseDialog()}>
+        <SecondaryButton
+          type="button"
+          disabled={isSubmitting}
+          onClick={() => modalRef.current?.onCloseDialog()}
+        >
           Cancelar
         </SecondaryButton>
         <PrimaryButton type="submit" loading={isSubmitting}>

@@ -11,6 +11,7 @@ import {
   Stack,
   Text,
 } from '@chakra-ui/react';
+import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { LuPencil, LuPlus, LuTrash2 } from 'react-icons/lu';
@@ -40,6 +41,7 @@ export function ItemsCard() {
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 500);
   const [typeFilter, setTypeFilter] = useState('');
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
@@ -219,7 +221,7 @@ export function ItemsCard() {
 
       <TableWithService
         columns={columns}
-        parameters={{ search, type: typeFilter || undefined }}
+        parameters={{ search: debouncedSearch, type: typeFilter || undefined }}
         onSearch={useItems}
         orderBy={{ id: 'name', desc: false }}
       />

@@ -1,16 +1,20 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getSession } from '~/lib/auth/current-user';
+import { parseBody, safeRoute } from '~/lib/http';
 import { buildMeta, getPaginationParams } from '~/lib/pagination';
 import prisma from '~/lib/prisma';
+import { categorySchema } from '~/schemas/category';
 import { createCategory, getCategoryStats } from '~/services/management';
 
 export const runtime = 'nodejs';
 
 const P2002 = 'P2002';
 const SORTABLE = new Set(['name', 'slug', 'created_at', 'updated_at']);
+const categoryCreateSchema = categorySchema.extend({ active: z.boolean().default(true) });
 
-export async function GET(req: NextRequest) {
+export const GET = safeRoute(async (req: NextRequest) => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
@@ -44,7 +48,7 @@ export async function GET(req: NextRequest) {
   }));
 
   return NextResponse.json({ data, meta: buildMeta(page, limit, total), summary });
-}
+});
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -53,17 +57,13 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const active = typeof body.active === 'boolean' ? body.active : true;
-  if (!name) {
-    return NextResponse.json(
-      { message: 'Nome é obrigatório.' },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+  const parsed = parseBody(categoryCreateSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json({ message: parsed.error }, { status: StatusCodes.BAD_REQUEST });
   }
 
   try {
-    const category = await createCategory(name, active);
+    const category = await createCategory(parsed.data.name, parsed.data.active);
     return NextResponse.json({ data: category }, { status: StatusCodes.CREATED });
   } catch (e) {
     if (

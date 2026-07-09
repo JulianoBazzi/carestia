@@ -1,4 +1,5 @@
 import 'server-only';
+import { onlyNumbers } from '@julianobazzi/utils';
 
 /**
  * Integração com a API Infosimples para consultar e baixar notas fiscais a partir
@@ -14,6 +15,10 @@ import 'server-only';
  */
 
 const BASE = 'https://api.infosimples.com/api/v2/consultas';
+// Consulta SEFAZ pode demorar (body pede timeout: 600), mas sem teto o fetch pende
+// indefinidamente; 60s corta hangs de rede. O download do XML é rápido → 15s.
+const QUERY_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 15_000;
 
 export function isInfosimplesEnabled(): boolean {
   return Boolean(process.env.INFOSIMPLES_TOKEN);
@@ -40,7 +45,7 @@ export async function fetchInvoiceXmlByKey(accessKey: string): Promise<Infosimpl
     return { status: 'error', message: 'Integração Infosimples não configurada.' };
   }
 
-  const key = accessKey.replace(/\D/g, '');
+  const key = onlyNumbers(accessKey);
   if (key.length !== 44) {
     return { status: 'error', message: 'Chave de acesso inválida (esperado 44 dígitos).' };
   }
@@ -51,6 +56,7 @@ export async function fetchInvoiceXmlByKey(accessKey: string): Promise<Infosimpl
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, nfe: key, timeout: 600 }),
+      signal: AbortSignal.timeout(QUERY_TIMEOUT_MS),
     });
     payload = await res.json();
   } catch (e) {
@@ -71,7 +77,9 @@ export async function fetchInvoiceXmlByKey(accessKey: string): Promise<Infosimpl
   }
 
   try {
-    const xmlRes = await fetch(record.url_xml);
+    const xmlRes = await fetch(record.url_xml, {
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
     if (!xmlRes.ok) {
       return { status: 'error', message: 'Não foi possível baixar o XML da nota.' };
     }

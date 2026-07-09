@@ -1,6 +1,7 @@
 'use client';
 
 import { Flex, Heading, HStack, Input, Stack, Text } from '@chakra-ui/react';
+import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { LuPencil, LuPlus, LuTrash2 } from 'react-icons/lu';
@@ -25,6 +26,7 @@ export function CompaniesCard() {
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 500);
 
   const removeMutation = useMutation({
     mutationFn: (id: string) => api.delete(`${API_URL_COMPANIES}/${id}`),
@@ -126,7 +128,7 @@ export function CompaniesCard() {
 
       <TableWithService
         columns={columns}
-        parameters={{ search }}
+        parameters={{ search: debouncedSearch }}
         onSearch={useCompanies}
         orderBy={{ id: 'social_name', desc: false }}
         onRowClick={(company) => modalRef.current?.onOpenDialog(company)}

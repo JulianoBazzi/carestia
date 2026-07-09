@@ -1,3 +1,4 @@
+import { isValidCNPJ, onlyNumbers } from '@julianobazzi/utils';
 import axios from 'axios';
 
 export interface IBrasilApiCnpj {
@@ -22,7 +23,8 @@ const client = axios.create({
 
 /** Fetches CNPJ data from BrasilAPI. Returns null on failure. */
 export async function fetchCnpj(cnpj: string): Promise<IBrasilApiCnpj | null> {
-  const digits = cnpj.replace(/\D/g, '');
+  const digits = onlyNumbers(cnpj);
+  if (!isValidCNPJ(digits)) return null;
   try {
     const { data } = await client.get<IBrasilApiCnpj>(`/cnpj/v1/${digits}`);
     return data;

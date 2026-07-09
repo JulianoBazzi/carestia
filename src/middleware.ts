@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { COOKIE_NAME, verifyToken } from '~/lib/auth/session';
 
 // Rotas públicas (acessíveis sem login).
-const PUBLIC_PATHS = new Set(['/', '/login', '/register', '/termos', '/privacidade']);
+const PUBLIC_PATHS = new Set(['/', '/login', '/register', '/terms', '/privacy']);
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname) || pathname.startsWith('/api/public');

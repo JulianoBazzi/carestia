@@ -1,14 +1,18 @@
--- CreateEnum
-CREATE TYPE "item_type" AS ENUM ('product', 'service');
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateEnum
-CREATE TYPE "invoice_model" AS ENUM ('nfe', 'nfse');
+CREATE TYPE "item_type" AS ENUM ('product', 'service', 'energy');
+
+-- CreateEnum
+CREATE TYPE "invoice_model" AS ENUM ('nfe', 'nfce', 'nfse', 'nf3e');
 
 -- CreateTable
 CREATE TABLE "categories" (
     "id" VARCHAR(26) NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "slug" VARCHAR(255) NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
     "deleted_at" TIMESTAMPTZ,
@@ -77,8 +81,10 @@ CREATE TABLE "invoices" (
     "series" VARCHAR(10),
     "access_key" VARCHAR(64) NOT NULL,
     "issued_at" TIMESTAMPTZ NOT NULL,
-    "total_value" INTEGER NOT NULL,
-    "raw_xml" TEXT,
+    "neighborhood" VARCHAR(255),
+    "city" VARCHAR(255),
+    "state" VARCHAR(2),
+    "ibge_code" VARCHAR(7),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
     "deleted_at" TIMESTAMPTZ,
@@ -92,10 +98,8 @@ CREATE TABLE "invoice_items" (
     "invoice_id" VARCHAR(26) NOT NULL,
     "item_id" VARCHAR(26) NOT NULL,
     "description" VARCHAR(255) NOT NULL,
-    "quantity" DECIMAL(14,4) NOT NULL,
     "unit" VARCHAR(10),
-    "unit_value" INTEGER NOT NULL,
-    "total_value" INTEGER NOT NULL,
+    "unit_value" DECIMAL(14,6) NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "invoice_items_pkey" PRIMARY KEY ("id")
@@ -160,3 +164,4 @@ ALTER TABLE "invoice_items" ADD CONSTRAINT "invoice_items_invoice_id_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "invoice_items" ADD CONSTRAINT "invoice_items_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
