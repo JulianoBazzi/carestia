@@ -3,6 +3,7 @@ import { isValidCNPJ, onlyNumbers } from '@julianobazzi/utils';
 import { newId } from '~/lib/id';
 import { normalizeName, slugify } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { normalizeUnit } from '~/lib/units';
 
 export function listCategories() {
   return prisma.category.findMany({
@@ -80,15 +81,16 @@ export interface IItemInput {
 export function createItem(data: IItemInput) {
   const name = normalizeName(data.name);
   if (!name) throw new Error('Nome obrigatório.');
-  if (!data.reference_code) throw new Error('Código de referência obrigatório.');
+  const reference_code = normalizeName(data.reference_code);
+  if (!reference_code) throw new Error('Código de referência obrigatório.');
   return prisma.item.create({
     data: {
       id: newId(),
       type: data.type,
       name,
-      reference_code: data.reference_code,
+      reference_code,
       category_id: data.category_id || null,
-      unit: data.unit || null,
+      unit: normalizeUnit(data.unit),
     },
   });
 }
@@ -96,15 +98,16 @@ export function createItem(data: IItemInput) {
 export async function updateItem(id: string, data: IItemInput): Promise<number> {
   const name = normalizeName(data.name);
   if (!name) throw new Error('Nome obrigatório.');
-  if (!data.reference_code) throw new Error('Código de referência obrigatório.');
+  const reference_code = normalizeName(data.reference_code);
+  if (!reference_code) throw new Error('Código de referência obrigatório.');
   const result = await prisma.item.updateMany({
     where: { id, deleted_at: null },
     data: {
       type: data.type,
       name,
-      reference_code: data.reference_code,
+      reference_code,
       category_id: data.category_id || null,
-      ...(data.unit !== undefined && { unit: data.unit || null }),
+      ...(data.unit !== undefined && { unit: normalizeUnit(data.unit) }),
     },
   });
   return result.count;
@@ -155,8 +158,10 @@ const COMPANY_NAME_FIELDS: (keyof ICompanyUpdate)[] = [
   'social_name',
   'fantasy_name',
   'street',
+  'number',
   'neighborhood',
   'city',
+  'state',
 ];
 
 function normalizeCompanyData(data: ICompanyUpdate): ICompanyUpdate {

@@ -5,7 +5,7 @@ import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
-import { type Ref, useImperativeHandle, useRef, useState } from 'react';
+import { type Ref, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
@@ -70,8 +70,26 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
     },
   });
 
+  const defaultValues = useMemo<CompanyFormInput>(
+    () =>
+      editing
+        ? {
+            document: editing.document ?? '',
+            social_name: editing.social_name ?? '',
+            fantasy_name: editing.fantasy_name ?? '',
+            street: editing.street ?? '',
+            number: editing.number ?? '',
+            neighborhood: editing.neighborhood ?? '',
+            city: editing.city ?? '',
+            state: editing.state ?? '',
+            zipcode: editing.zipcode ?? '',
+          }
+        : EMPTY,
+    [editing],
+  );
+
   const form = useForm({
-    defaultValues: EMPTY,
+    defaultValues,
     validationLogic: revalidateLogic(),
     validators: { onDynamic: companySchema },
     onSubmit: ({ value }) => mutation.mutateAsync(companySchema.parse(value)),
@@ -127,6 +145,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                   label="CNPJ"
                   placeholder="00.000.000/0000-00"
                   required={!isEditing}
+                  uppercase={false}
                   disabled={isEditing || isSubmitting}
                   value={field.state.value ?? ''}
                   onChange={(e) => field.handleChange(e.target.value)}
@@ -171,6 +190,7 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                   <Input
                     name={field.name}
                     label={label}
+                    uppercase={name !== 'zipcode'}
                     disabled={isSubmitting}
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}

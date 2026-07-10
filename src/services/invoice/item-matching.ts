@@ -2,6 +2,7 @@ import 'server-only';
 import type { Prisma } from '~/generated/prisma/client';
 import { newId } from '~/lib/id';
 import { matchKey, normalizeName } from '~/lib/normalize';
+import { normalizeUnit } from '~/lib/units';
 
 /**
  * Limiar de similaridade (0–1, `word_similarity` do pg_trgm) para considerar que
@@ -64,19 +65,24 @@ export async function findOrCreateItem(
 ): Promise<string> {
   const name = normalizeName(input.name) ?? input.name;
   const key = matchKey(input.name);
+  // Normaliza código e unidade (UPPERCASE + sem acento) no único choke point,
+  // para que WHERE e create usem os mesmos valores e o matching por
+  // unidade/NCM fique consistente ('kWh' vs 'KWH', 'l' vs 'L').
+  const referenceCode = normalizeName(input.reference_code) ?? input.reference_code;
+  const unit = normalizeUnit(input.unit);
 
   // Top-N por similaridade (não só o 1º): o melhor por nome pode falhar no
   // portão de preço enquanto um segundo candidato passa nos dois.
   const rows = await tx.$queryRaw<{ id: string; sim: number; median_price: number | null }[]>`
     SELECT i.id,
-           word_similarity(${key}, regexp_replace(i.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
+           word_similarity(${key}::text, regexp_replace(i.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY ii.unit_value) AS median_price
     FROM items i
     LEFT JOIN invoice_items ii ON ii.item_id = i.id
     WHERE i.type = ${input.type}::item_type
-      AND i.reference_code = ${input.reference_code}
+      AND i.reference_code = ${referenceCode}
       AND i.deleted_at IS NULL
-      AND i.unit IS NOT DISTINCT FROM ${input.unit ?? null}::varchar
+      AND i.unit IS NOT DISTINCT FROM ${unit}::varchar
     GROUP BY i.id, i.name
     ORDER BY sim DESC
     LIMIT 5
@@ -101,16 +107,16 @@ export async function findOrCreateItem(
     where: {
       type_reference_code_name: {
         type: input.type,
-        reference_code: input.reference_code,
+        reference_code: referenceCode,
         name,
       },
     },
     create: {
       id: newId(),
       type: input.type,
-      reference_code: input.reference_code,
+      reference_code: referenceCode,
       name,
-      unit: input.unit ?? null,
+      unit,
       nbs_code: input.nbs_code ?? null,
     },
     update: {},

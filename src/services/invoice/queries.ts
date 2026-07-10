@@ -2,6 +2,7 @@ import 'server-only';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { normalizeUnit } from '~/lib/units';
 import type { IInflationRow } from '~/services/invoice/analytics';
 import { findOrCreateItem } from '~/services/invoice/item-matching';
 
@@ -42,12 +43,14 @@ async function buildLineItems(
 ) {
   for (const it of items) {
     const name = normalizeName(it.description) ?? it.description;
+    const unit = normalizeUnit(it.unit);
     // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
+    // O findOrCreateItem normaliza name/reference_code/unit internamente.
     const itemId = await findOrCreateItem(tx, {
       type: itemType,
       reference_code: it.referenceCode,
       name: it.description,
-      unit: it.unit ?? null,
+      unit,
     });
     await tx.invoiceItem.create({
       data: {
@@ -55,7 +58,7 @@ async function buildLineItems(
         invoice_id: invoiceId,
         item_id: itemId,
         description: name,
-        unit: it.unit ?? null,
+        unit,
         unit_value: it.unitValue,
       },
     });
@@ -80,12 +83,12 @@ export async function updateInvoice(
       where: { id },
       data: {
         model: data.model,
-        number: data.number,
-        series: data.series ?? null,
+        number: normalizeName(data.number) ?? data.number,
+        series: normalizeName(data.series) ?? null,
         issued_at: data.issuedAt,
-        neighborhood: data.neighborhood ?? null,
-        city: data.city ?? null,
-        state: data.state ?? null,
+        neighborhood: normalizeName(data.neighborhood) ?? null,
+        city: normalizeName(data.city) ?? null,
+        state: normalizeName(data.state) ?? null,
       },
     });
     await tx.invoiceItem.deleteMany({ where: { invoice_id: id } });
@@ -107,13 +110,13 @@ export async function createInvoiceManual(
         user_id: userId,
         company_id: data.companyId,
         model: data.model,
-        number: data.number,
-        series: data.series ?? null,
+        number: normalizeName(data.number) ?? data.number,
+        series: normalizeName(data.series) ?? null,
         access_key: data.accessKey,
         issued_at: data.issuedAt,
-        neighborhood: data.neighborhood ?? null,
-        city: data.city ?? null,
-        state: data.state ?? null,
+        neighborhood: normalizeName(data.neighborhood) ?? null,
+        city: normalizeName(data.city) ?? null,
+        state: normalizeName(data.state) ?? null,
       },
     });
     await buildLineItems(tx, invoice.id, itemType, data.items);

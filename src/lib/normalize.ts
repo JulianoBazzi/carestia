@@ -8,6 +8,16 @@ export function normalizeName(value?: string | null): string | undefined {
 }
 
 /**
+ * Transformação "ao vivo" para inputs: UPPERCASE + sem acento, SEM trim nem
+ * colapso de espaços (para não atrapalhar digitar espaços entre/depois de
+ * palavras). Espelha `normalizeName` na tela; o `normalizeName` completo roda no
+ * submit/servidor como fonte da verdade.
+ */
+export function toUpperLive(value: string): string {
+  return removeAccents(value).toUpperCase();
+}
+
+/**
  * Chave de comparação para casar variações de escrita do MESMO produto.
  * Reaproveita `normalizeName` (UPPERCASE + sem acento + espaços colapsados) e
  * remove pontuação, de modo que "S-10", "S 10" e "S10." colapsem na comparação.

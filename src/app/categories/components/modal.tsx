@@ -5,7 +5,7 @@ import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
-import { type Ref, useImperativeHandle, useRef, useState } from 'react';
+import { type Ref, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
@@ -49,8 +49,13 @@ export function CategoryModal({ ref }: { ref?: Ref<CategoryModalHandle> }) {
     },
   });
 
+  const defaultValues = useMemo<CategoryData>(
+    () => ({ name: editing?.name ?? '', active: editing?.active ?? true }),
+    [editing],
+  );
+
   const form = useForm({
-    defaultValues: { name: '', active: true } as CategoryData,
+    defaultValues,
     validationLogic: revalidateLogic(),
     validators: { onDynamic: categorySchema },
     onSubmit: ({ value }) => mutation.mutateAsync(categorySchema.parse(value)),

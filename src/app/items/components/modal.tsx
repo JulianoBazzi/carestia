@@ -5,7 +5,7 @@ import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { useSelector } from '@tanstack/react-store';
-import { type Ref, useImperativeHandle, useRef, useState } from 'react';
+import { type Ref, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
@@ -64,8 +64,22 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
     },
   });
 
+  const defaultValues = useMemo<ItemFormInput>(
+    () =>
+      editing
+        ? {
+            type: editing.type,
+            name: editing.name,
+            reference_code: editing.reference_code,
+            category_id: editing.category_id ?? '',
+            unit: editing.unit ?? '',
+          }
+        : EMPTY,
+    [editing],
+  );
+
   const form = useForm({
-    defaultValues: EMPTY,
+    defaultValues,
     validationLogic: revalidateLogic(),
     validators: { onDynamic: itemSchema },
     onSubmit: ({ value }) => mutation.mutateAsync(itemSchema.parse(value)),
@@ -185,6 +199,21 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
                   <NativeSelect.Indicator />
                 </NativeSelect.Root>
               </Field.Root>
+            )}
+          </form.Field>
+
+          <form.Field name="unit">
+            {(field) => (
+              <Input
+                name={field.name}
+                label="Unidade"
+                placeholder="Ex.: UN, kg, kWh, L"
+                disabled={isSubmitting}
+                value={field.state.value ?? ''}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+                error={field.state.meta.errors[0]?.message}
+              />
             )}
           </form.Field>
         </Stack>

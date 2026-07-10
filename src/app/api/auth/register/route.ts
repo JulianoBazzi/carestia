@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { hashPassword } from '~/lib/auth/password';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import { newId } from '~/lib/id';
+import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { firstIssue, registerSchema } from '~/schemas/auth';
 
@@ -40,7 +41,12 @@ export async function POST(req: Request) {
   }
 
   const user = await prisma.user.create({
-    data: { id: newId(), name, email, password: await hashPassword(password) },
+    data: {
+      id: newId(),
+      name: normalizeName(name) ?? name,
+      email,
+      password: await hashPassword(password),
+    },
   });
 
   const token = await createToken({

@@ -465,6 +465,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                         <Input
                           name={`val-${index}`}
                           label={index === 0 ? (isEnergy ? 'R$/kWh' : 'Valor unit.') : undefined}
+                          uppercase={false}
                           disabled={busy}
                           value={it.unit_value}
                           onChange={(e) => updateItem(index, { unit_value: e.target.value })}

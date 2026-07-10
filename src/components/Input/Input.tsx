@@ -7,6 +7,7 @@ import {
   Skeleton,
 } from '@chakra-ui/react';
 import type { Ref } from 'react';
+import { shouldUppercase, wrapUppercase } from '~/components/Input/uppercase';
 
 export interface IInputProps extends ChakraInputProps {
   name: string;
@@ -14,6 +15,8 @@ export interface IInputProps extends ChakraInputProps {
   error?: string;
   required?: boolean;
   loading?: boolean;
+  /** Transforma o texto em MAIÚSCULA (sem acento) ao digitar. Default true para texto livre. */
+  uppercase?: boolean;
 }
 
 export function Input({
@@ -24,10 +27,14 @@ export function Input({
   loading,
   disabled,
   maxW,
+  uppercase,
+  type,
+  onChange,
   ref,
   ...rest
 }: IInputProps & { ref?: Ref<HTMLInputElement> }) {
   const hasError = !!error;
+  const upper = shouldUppercase(uppercase, type);
 
   return (
     <Field.Root invalid={hasError} required={required} maxW={maxW}>
@@ -45,8 +52,10 @@ export function Input({
           ref={ref}
           id={name}
           name={name}
+          type={type}
           autoComplete="off"
           disabled={disabled}
+          onChange={wrapUppercase(onChange, upper)}
           {...rest}
         />
       )}

@@ -7,6 +7,7 @@ import {
   Skeleton,
 } from '@chakra-ui/react';
 import type { Ref } from 'react';
+import { shouldUppercase, wrapUppercase } from '~/components/Input/uppercase';
 
 export interface ITextAreaProps extends ChakraTextareaProps {
   name: string;
@@ -14,6 +15,8 @@ export interface ITextAreaProps extends ChakraTextareaProps {
   error?: string;
   required?: boolean;
   loading?: boolean;
+  /** Transforma o texto em MAIÚSCULA (sem acento) ao digitar. Default true. */
+  uppercase?: boolean;
 }
 
 export function TextArea({
@@ -24,10 +27,13 @@ export function TextArea({
   loading,
   disabled,
   maxW,
+  uppercase,
+  onChange,
   ref,
   ...rest
 }: ITextAreaProps & { ref?: Ref<HTMLTextAreaElement> }) {
   const hasError = !!error;
+  const upper = shouldUppercase(uppercase);
 
   return (
     <Field.Root invalid={hasError} required={required} maxW={maxW}>
@@ -40,7 +46,14 @@ export function TextArea({
       {loading ? (
         <Skeleton height="24" w="100%" borderRadius="md" />
       ) : (
-        <ChakraTextarea ref={ref} id={name} name={name} disabled={disabled} {...rest} />
+        <ChakraTextarea
+          ref={ref}
+          id={name}
+          name={name}
+          disabled={disabled}
+          onChange={wrapUppercase(onChange, upper)}
+          {...rest}
+        />
       )}
       {hasError && <Field.ErrorText>{error}</Field.ErrorText>}
     </Field.Root>

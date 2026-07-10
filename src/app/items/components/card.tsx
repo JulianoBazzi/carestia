@@ -114,6 +114,11 @@ export function ItemsCard({ aiEnabled }: ItemsCardProps) {
         ),
       },
       {
+        accessorKey: 'unit',
+        header: 'Unidade',
+        cell: ({ row }) => <Text color="fg.muted">{row.original.unit ?? '—'}</Text>,
+      },
+      {
         accessorKey: 'name',
         header: 'Nome',
         cell: ({ row }) => <Text fontWeight="medium">{row.original.name}</Text>,

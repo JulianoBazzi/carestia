@@ -1,6 +1,7 @@
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { normalizeUnit } from '~/lib/units';
 import { fetchCnpj } from '~/services/brasilapi';
 import { findOrCreateItem } from '~/services/invoice/item-matching';
 import { type ICompanyDTO, type IParsedInvoice, parseXml } from '~/services/invoice/parser';
@@ -41,8 +42,10 @@ async function resolveCompany(dto: ICompanyDTO) {
     socialName: normalizeName(data.socialName) ?? data.socialName,
     fantasyName: normalizeName(data.fantasyName),
     street: normalizeName(data.street),
+    number: normalizeName(data.number),
     neighborhood: normalizeName(data.neighborhood),
     city: normalizeName(data.city),
+    state: normalizeName(data.state),
   };
 
   return { data: normalized, origin: source };
@@ -118,7 +121,7 @@ export async function importInvoice(
           id: newId(),
           item_id: itemId,
           description: normalizeName(it.description) ?? it.description,
-          unit: it.unit,
+          unit: normalizeUnit(it.unit),
           // Privacy-first: só o preço unitário (R$), sem quantidade nem total.
           unit_value: Number(it.unitValue),
         });
@@ -139,14 +142,14 @@ export async function importInvoice(
           user_id: userId,
           company_id: company.id,
           model: parsed.invoice.model,
-          number: parsed.invoice.number,
-          series: parsed.invoice.series,
+          number: normalizeName(parsed.invoice.number) ?? parsed.invoice.number,
+          series: normalizeName(parsed.invoice.series) ?? null,
           access_key: parsed.invoice.accessKey,
           issued_at: new Date(parsed.invoice.issuedAt),
           // Privacy-first: sem total da nota nem XML cru.
-          neighborhood: location.neighborhood ?? null,
-          city: location.city ?? null,
-          state: location.state ?? null,
+          neighborhood: normalizeName(location.neighborhood) ?? null,
+          city: normalizeName(location.city) ?? null,
+          state: normalizeName(location.state) ?? null,
           ibge_code: location.ibgeCode ?? null,
           items: { create: lineItems },
         },

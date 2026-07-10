@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import { parseBody, safeRoute } from '~/lib/http';
+import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { updateAccountSchema } from '~/schemas/account';
 
@@ -25,7 +26,7 @@ export const PATCH = safeRoute(async (req: Request) => {
 
   const user = await prisma.user.update({
     where: { id: session.sub },
-    data: { name: parsed.data.name },
+    data: { name: normalizeName(parsed.data.name) ?? parsed.data.name },
   });
 
   const token = await createToken({ sub: user.id, name: user.name, email: user.email });
