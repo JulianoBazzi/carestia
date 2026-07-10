@@ -242,7 +242,7 @@ export function TableWithService<T extends IEntityBase, P extends IParamsRequest
             >
               <RiArrowLeftSLine />
             </IconButton>
-            <Text fontSize="sm" px="2">
+            <Text fontSize="sm" px="2" whiteSpace="nowrap" flexShrink="0">
               {pageIndex + 1} de {pageCount || 1}
             </Text>
             <IconButton

@@ -36,7 +36,10 @@ export async function POST(req: Request) {
   const form = await req.formData().catch(() => null);
   if (!form) {
     return NextResponse.json(
-      { error: "Envie multipart/form-data com o campo 'file'." },
+      {
+        error:
+          'Não foi possível ler o envio. Se for um .zip grande, ele pode ter excedido o limite de 50 MB — tente dividir em partes.',
+      },
       { status: StatusCodes.BAD_REQUEST },
     );
   }

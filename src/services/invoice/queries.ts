@@ -3,6 +3,7 @@ import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import type { IInflationRow } from '~/services/invoice/analytics';
+import { findOrCreateItem } from '~/services/invoice/item-matching';
 
 export type InvoiceModelStr = 'nfe' | 'nfce' | 'nfse' | 'nf3e';
 
@@ -41,24 +42,18 @@ async function buildLineItems(
 ) {
   for (const it of items) {
     const name = normalizeName(it.description) ?? it.description;
-    const item = await tx.item.upsert({
-      where: {
-        type_reference_code_name: { type: itemType, reference_code: it.referenceCode, name },
-      },
-      create: {
-        id: newId(),
-        type: itemType,
-        reference_code: it.referenceCode,
-        name,
-        unit: it.unit ?? null,
-      },
-      update: {},
+    // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
+    const itemId = await findOrCreateItem(tx, {
+      type: itemType,
+      reference_code: it.referenceCode,
+      name: it.description,
+      unit: it.unit ?? null,
     });
     await tx.invoiceItem.create({
       data: {
         id: newId(),
         invoice_id: invoiceId,
-        item_id: item.id,
+        item_id: itemId,
         description: name,
         unit: it.unit ?? null,
         unit_value: it.unitValue,

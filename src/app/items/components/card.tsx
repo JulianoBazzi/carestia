@@ -14,7 +14,11 @@ import {
 import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
-import { LuPencil, LuPlus, LuTrash2 } from 'react-icons/lu';
+import { LuPencil, LuPlus, LuSparkles, LuTrash2 } from 'react-icons/lu';
+import {
+  CategorizeModal,
+  type CategorizeModalHandle,
+} from '~/app/items/components/categorize-modal';
 import { ItemModal, type ItemModalHandle } from '~/app/items/components/modal';
 import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
@@ -36,9 +40,14 @@ const TYPE_FILTERS = [
   { value: 'service', label: 'Serviços' },
 ];
 
-export function ItemsCard() {
+interface ItemsCardProps {
+  aiEnabled: boolean;
+}
+
+export function ItemsCard({ aiEnabled }: ItemsCardProps) {
   const modalRef = useRef<ItemModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
+  const categorizeModalRef = useRef<CategorizeModalHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 500);
@@ -90,6 +99,8 @@ export function ItemsCard() {
       errorFeedbackToast('Itens', error);
     },
   });
+
+  const uncategorizedCount = allItems.filter((i) => !i.category_id).length;
 
   const columns = useMemo<CustomColumnDef<IItemAPI>[]>(
     () => [
@@ -189,9 +200,21 @@ export function ItemsCard() {
             Produtos e serviços identificados nas suas notas.
           </Text>
         </Stack>
-        <PrimaryButton size="sm" onClick={() => modalRef.current?.onOpenDialog()}>
-          <LuPlus /> Novo item
-        </PrimaryButton>
+        <HStack gap="2">
+          {aiEnabled && (
+            <PrimaryButton
+              size="sm"
+              disabled={uncategorizedCount === 0}
+              onClick={() => categorizeModalRef.current?.open()}
+            >
+              <LuSparkles /> Categorizar com IA
+              {uncategorizedCount > 0 ? ` (${uncategorizedCount})` : ''}
+            </PrimaryButton>
+          )}
+          <PrimaryButton size="sm" onClick={() => modalRef.current?.onOpenDialog()}>
+            <LuPlus /> Novo item
+          </PrimaryButton>
+        </HStack>
       </Flex>
 
       <Flex justify="space-between" align="center" gap="3" wrap="wrap">
@@ -274,6 +297,7 @@ export function ItemsCard() {
 
       <ItemModal ref={modalRef} />
       <ConfirmDialog ref={confirmRef} />
+      <CategorizeModal ref={categorizeModalRef} />
     </Stack>
   );
 }

@@ -5,6 +5,7 @@ const { tx, prismaMock } = vi.hoisted(() => {
     invoice: { update: vi.fn(), create: vi.fn() },
     invoiceItem: { deleteMany: vi.fn(), create: vi.fn() },
     item: { upsert: vi.fn() },
+    $queryRaw: vi.fn(),
   };
   return {
     tx,
@@ -32,6 +33,7 @@ const baseData = {
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
+  tx.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
   tx.item.upsert.mockResolvedValue({ id: 'item-x' });
   tx.invoiceItem.create.mockResolvedValue({});
   tx.invoiceItem.deleteMany.mockResolvedValue({ count: 0 });

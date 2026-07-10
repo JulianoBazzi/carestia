@@ -25,6 +25,9 @@ next-env.d.ts
 .env.local
 .env.*.local
 
+# seed local — contém a senha do admin em texto puro; não versionar
+/prisma/seed.ts
+
 # misc
 .DS_Store
 *.log

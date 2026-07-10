@@ -6,7 +6,21 @@ import { newId } from '~/lib/id';
 import prisma from '~/lib/prisma';
 import { firstIssue, registerSchema } from '~/schemas/auth';
 
+// Beta fechado: novos cadastros estão desabilitados neste primeiro momento.
+// Para reabrir, defina REGISTRATION_OPEN=true no ambiente.
+const REGISTRATION_OPEN = process.env.REGISTRATION_OPEN === 'true';
+
 export async function POST(req: Request) {
+  if (!REGISTRATION_OPEN) {
+    return NextResponse.json(
+      {
+        message:
+          'O Minha Inflação está em beta fechado e não está aceitando novos cadastros no momento.',
+      },
+      { status: StatusCodes.FORBIDDEN },
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {

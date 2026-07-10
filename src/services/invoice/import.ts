@@ -2,6 +2,7 @@ import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { fetchCnpj } from '~/services/brasilapi';
+import { findOrCreateItem } from '~/services/invoice/item-matching';
 import { type ICompanyDTO, type IParsedInvoice, parseXml } from '~/services/invoice/parser';
 
 export type ImportResult =
@@ -59,6 +60,15 @@ export async function importInvoice(
     return { status: 'error', message: (e as Error).message };
   }
 
+  // Beta: por ora importamos apenas produtos (NF-e, NFC-e, NF3e/energia).
+  // NFS-e (serviços) fica para uma versão futura.
+  if (parsed.invoice.model === 'nfse') {
+    return {
+      status: 'error',
+      message: 'A importação de NFS-e (nota de serviço) será incluída em uma versão futura.',
+    };
+  }
+
   // Dedupe dentro do mesmo lote (sem hit no banco).
   if (seenKeys) {
     if (seenKeys.has(parsed.invoice.accessKey)) {
@@ -95,28 +105,18 @@ export async function importInvoice(
 
       const lineItems = [];
       for (const it of parsed.items) {
-        const name = normalizeName(it.name) ?? it.name;
-        const item = await tx.item.upsert({
-          where: {
-            type_reference_code_name: {
-              type: it.type,
-              reference_code: it.referenceCode,
-              name,
-            },
-          },
-          create: {
-            id: newId(),
-            type: it.type,
-            reference_code: it.referenceCode,
-            name,
-            unit: it.unit,
-            nbs_code: it.nbsCode,
-          },
-          update: {},
+        // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
+        const itemId = await findOrCreateItem(tx, {
+          type: it.type,
+          reference_code: it.referenceCode,
+          name: it.name,
+          unit: it.unit,
+          nbs_code: it.nbsCode,
+          unitValue: Number(it.unitValue),
         });
         lineItems.push({
           id: newId(),
-          item_id: item.id,
+          item_id: itemId,
           description: normalizeName(it.description) ?? it.description,
           unit: it.unit,
           // Privacy-first: só o preço unitário (R$), sem quantidade nem total.

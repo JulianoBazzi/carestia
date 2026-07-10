@@ -7,6 +7,7 @@ const { tx, prismaMock, fetchCnpj } = vi.hoisted(() => {
     company: { upsert: vi.fn() },
     item: { upsert: vi.fn() },
     invoice: { create: vi.fn() },
+    $queryRaw: vi.fn(),
   };
   return {
     tx,
@@ -24,7 +25,8 @@ const fixtures = join(__dirname, '__fixtures__');
 const nfe = readFileSync(join(fixtures, 'nfe.xml'), 'utf-8');
 const nfse = readFileSync(join(fixtures, 'nfse.xml'), 'utf-8');
 
-const nfseNoAddress = `<NFSe><infNFSe Id="NFS999"><nNFSe>9</nNFSe><dhProc>2026-06-01T00:00:00-03:00</dhProc><emit><CNPJ>11111111000111</CNPJ><xNome>EMPRESA SEM ENDERECO</xNome></emit><valores><vLiq>10.00</vLiq></valores><DPS><infDPS Id="DPS1"><serie>1</serie><serv><cServ><cTribNac>010701</cTribNac><xDescServ>SVC</xDescServ></cServ></serv><valores><vServPrest><vServ>10.00</vServ></vServPrest></valores></infDPS></DPS></infNFSe></NFSe>`;
+// NFC-e (produto) sem endereço no XML — aciona o fallback da BrasilAPI.
+const nfceNoAddress = `<nfeProc><NFe><infNFe Id="NFe65260611111111000111650010000000011000000018"><ide><mod>65</mod><nNF>1</nNF><serie>1</serie><dhEmi>2026-06-02T10:00:00-03:00</dhEmi></ide><emit><CNPJ>11111111000111</CNPJ><xNome>EMPRESA SEM ENDERECO</xNome></emit><det><prod><NCM>22030000</NCM><xProd>CERVEJA LATA</xProd><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>5.00</vUnCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
 
 // NFC-e (modelo 65): mesma estrutura da NF-e, distinguida por ide.mod=65.
 const nfce = `<nfeProc><NFe><infNFe Id="NFe65260612345678000199650010000000011000000017"><ide><mod>65</mod><nNF>1</nNF><serie>1</serie><dhEmi>2026-06-02T10:00:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>MERCADO EXEMPLO</xNome><enderEmit><xLgr>RUA A</xLgr><nro>10</nro><xBairro>CENTRO</xBairro><xMun>PORTO ALEGRE</xMun><cMun>4314902</cMun><UF>RS</UF><CEP>90000000</CEP></enderEmit></emit><det><prod><NCM>22030000</NCM><xProd>CERVEJA LATA</xProd><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>5.00</vUnCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
@@ -32,6 +34,7 @@ const nfce = `<nfeProc><NFe><infNFe Id="NFe6526061234567800019965001000000001100
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
+  tx.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
   tx.company.upsert.mockResolvedValue({ id: 'company-1' });
   tx.item.upsert.mockResolvedValue({ id: 'item-1' });
   tx.invoice.create.mockResolvedValue({ id: 'invoice-1' });
@@ -78,6 +81,20 @@ describe('importInvoice — NF-e', () => {
   });
 });
 
+describe('importInvoice — dedup por similaridade (pg_trgm)', () => {
+  it('reaproveita item existente parecido em vez de criar outro', async () => {
+    tx.$queryRaw.mockResolvedValue([{ id: 'item-existente', sim: 0.92 }]);
+
+    const result = await importInvoice('user-1', nfe);
+
+    expect(result.status).toBe('imported');
+    // Candidato acima do limiar → não cria item novo.
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+    const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
+    expect(invoiceArg.items.create[0].item_id).toBe('item-existente');
+  });
+});
+
 describe('importInvoice — dedupe no lote', () => {
   it('marca chave repetida como duplicated sem tocar o banco', async () => {
     const seen = new Set<string>();
@@ -92,16 +109,13 @@ describe('importInvoice — dedupe no lote', () => {
 });
 
 describe('importInvoice — NFS-e', () => {
-  it('importa serviço com cTribNac e valor', async () => {
+  it('bloqueia NFS-e com mensagem de versão futura, sem tocar o banco', async () => {
     const result = await importInvoice('user-1', nfse);
-    expect(result.status).toBe('imported');
-
-    const itemArg = tx.item.upsert.mock.calls[0][0];
-    expect(itemArg.create.type).toBe('service');
-    expect(itemArg.create.reference_code).toBe('010701');
-
-    const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
-    expect(invoiceArg.items.create[0].unit_value).toBeCloseTo(60); // R$ 60,00
+    expect(result).toEqual({
+      status: 'error',
+      message: 'A importação de NFS-e (nota de serviço) será incluída em uma versão futura.',
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -142,7 +156,7 @@ describe('importInvoice — BrasilAPI fallback', () => {
       cnae_fiscal_descricao: '',
     });
 
-    await importInvoice('user-1', nfseNoAddress);
+    await importInvoice('user-1', nfceNoAddress);
 
     expect(fetchCnpj).toHaveBeenCalledWith('11111111000111');
     const create = tx.company.upsert.mock.calls[0][0].create;

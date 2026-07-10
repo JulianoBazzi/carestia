@@ -11,10 +11,6 @@ const SIZES: Record<AdVariant, { w: number | string; maxW?: number; h: number }>
   vertical: { w: 300, h: 600 },
 };
 
-/**
- * Espaço fixo de anúncio (placeholder). Apenas reserva o espaço no layout, como no
- * design — sem integração com AdSense ou qualquer rede de anúncios.
- */
 export function AdSlot({ variant = 'banner' }: { variant?: AdVariant }) {
   const s = SIZES[variant];
   return (
@@ -35,7 +31,6 @@ export function AdSlot({ variant = 'banner' }: { variant?: AdVariant }) {
         <Text fontSize="xs" fontWeight="medium">
           Publicidade
         </Text>
-        <Text fontSize="2xs">Espaço reservado</Text>
       </Stack>
     </Center>
   );
