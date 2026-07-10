@@ -21,7 +21,6 @@ export const UNIT_ALIASES: Record<string, string> = {
   UNIDADES: 'UN',
   UND: 'UN',
   UNI: 'UN',
-  UN1: 'UN',
   // Peça (distinta de UN e de PCT)
   PECA: 'PC',
   PECAS: 'PC',
@@ -109,6 +108,7 @@ export const UNIT_ALIASES: Record<string, string> = {
   VIDROS: 'VD',
   LATA: 'LTA',
   LATAS: 'LTA',
+  LA1: 'LTA', // sufixo "1" de ERP sobre "LA" (lata); LTA é o canônico (LT=litro)
   AMPOLA: 'AMP',
   AMPOLAS: 'AMP',
   CAPSULA: 'CAP',
@@ -123,13 +123,22 @@ export const UNIT_ALIASES: Record<string, string> = {
   'KW H': 'KWH',
 };
 
+/** Conjunto de formas canônicas (valores da tabela), usado na regra do sufixo "1". */
+const CANONICAL_UNITS = new Set(Object.values(UNIT_ALIASES));
+
 /**
  * Normaliza a unidade para a forma canônica: aplica `normalizeName`
  * (UPPERCASE + sem acento) e depois o alias de→para. Retorna `null` para
  * vazio/nulo; unidade desconhecida passa direto (já normalizada).
+ *
+ * Trata ainda o sufixo "1" de ERP (`UN1`, `KG1`, `L1`, `CX1`…): colapsa na base
+ * quando ela é uma unidade canônica conhecida. NÃO afeta `M2`/`M3`/`CX2…CX100`
+ * (terminam em 2/3/…/0, não em 1) — distintos de propósito.
  */
 export function normalizeUnit(value?: string | null): string | null {
   const n = normalizeName(value);
   if (!n) return null;
-  return UNIT_ALIASES[n] ?? n;
+  if (UNIT_ALIASES[n]) return UNIT_ALIASES[n];
+  if (n.endsWith('1') && CANONICAL_UNITS.has(n.slice(0, -1))) return n.slice(0, -1);
+  return n;
 }

@@ -40,6 +40,10 @@ describe('parseXml NFC-e (mod 65)', () => {
     expect(parsed.items[0].referenceCode).toBe('10063021');
     expect(parsed.items[0].totalValue).toBe('51.80');
   });
+
+  it('captura o cEAN como GTIN válido', () => {
+    expect(parsed.items[0].ean).toBe('7891234567890');
+  });
 });
 
 describe('parseXml NF3e (energia, mod 66)', () => {
@@ -89,6 +93,10 @@ describe('parseXml NF-e', () => {
     expect(item.name).toBe('ALCOOL ETILICO HIDRATADO');
     expect(item.unit).toBe('L');
     expect(item.totalValue).toBe('141.50');
+  });
+
+  it('deixa ean undefined quando cEAN é "SEM GTIN"', () => {
+    expect(parsed.items[0].ean).toBeUndefined();
   });
 });
 

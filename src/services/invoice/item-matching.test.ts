@@ -1,7 +1,83 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { matchKey } from '~/lib/normalize';
-import { PRICE_MATCH_MAX_RATIO, priceWithinBand } from '~/services/invoice/item-matching';
+import {
+  findOrCreateItem,
+  PRICE_MATCH_MAX_RATIO,
+  priceWithinBand,
+} from '~/services/invoice/item-matching';
+
+function makeTx() {
+  return {
+    item: {
+      findFirst: vi.fn(),
+      update: vi.fn().mockResolvedValue({ id: 'x' }),
+      upsert: vi.fn().mockResolvedValue({ id: 'novo' }),
+    },
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    // biome-ignore lint/suspicious/noExplicitAny: mock do client de transação
+  } as any;
+}
+
+describe('findOrCreateItem — atalho por EAN', () => {
+  let tx: ReturnType<typeof makeTx>;
+  beforeEach(() => {
+    tx = makeTx();
+  });
+
+  it('reaproveita o item pelo EAN, ignorando nome e preço', async () => {
+    tx.item.findFirst.mockResolvedValue({ id: 'item-ean' });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'NOME TOTALMENTE DIFERENTE',
+      unit: 'UN',
+      ean: '7891234567890',
+      unitValue: 999,
+    });
+
+    expect(id).toBe('item-ean');
+    // Confia no EAN: nem roda similaridade nem cria item.
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('ignora EAN inválido/"SEM GTIN" e cai no fluxo por nome', async () => {
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ALCOOL ETILICO',
+      unit: 'L',
+      ean: 'SEM GTIN',
+      unitValue: 3.68,
+    });
+
+    expect(tx.item.findFirst).not.toHaveBeenCalled();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
+    expect(id).toBe('novo');
+  });
+
+  it('faz backfill do EAN em item casado por nome que ainda não tem GTIN', async () => {
+    tx.$queryRaw.mockResolvedValue([{ id: 'item-nome', sim: 0.95, median_price: 25.0, ean: null }]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'ARROZ TIPO 1 5KG',
+      unit: 'UN',
+      ean: '7891234567890',
+      unitValue: 25.9,
+    });
+
+    expect(id).toBe('item-nome');
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-nome' },
+      data: { ean: '7891234567890' },
+    });
+  });
+});
 
 describe('priceWithinBand', () => {
   const f = PRICE_MATCH_MAX_RATIO; // 5

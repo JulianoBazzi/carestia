@@ -20,6 +20,7 @@ export interface IItemDTO {
   referenceCode: string; // NCM (product) | cTribNac (service) | cClass (energia)
   name: string;
   unit?: string;
+  ean?: string; // GTIN/EAN comercial (cEAN); undefined quando "SEM GTIN"/inválido
   nbsCode?: string;
   description: string;
   quantity: string; // raw decimal
@@ -67,6 +68,16 @@ function toArray<T>(value: T | T[] | undefined): T[] {
 
 function str(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
+}
+
+/**
+ * Normaliza o cEAN da NF-e para um GTIN válido ou `undefined`. A NF-e usa o
+ * literal `"SEM GTIN"` quando o produto não tem código de barras (combustíveis,
+ * granéis, etc.); só aceitamos EAN-8/12/13/14 (dígitos).
+ */
+export function validEan(value: unknown): string | undefined {
+  const s = str(value).trim();
+  return /^\d{8}$|^\d{12,14}$/.test(s) ? s : undefined;
 }
 
 /** NF-e (modelo 55) e NFC-e (modelo 65) compartilham a mesma estrutura; o modelo
@@ -121,6 +132,7 @@ export function parseNFe(obj: any): IParsedInvoice {
       referenceCode: str(prod.NCM),
       name: str(prod.xProd),
       unit: prod.uCom ? str(prod.uCom) : undefined,
+      ean: validEan(prod.cEAN),
       description: str(prod.xProd),
       quantity: str(prod.qCom),
       unitValue: str(prod.vUnCom),

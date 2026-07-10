@@ -73,6 +73,7 @@ model Item {
   reference_code String    @db.VarChar(20) // NCM (product) | cTribNac (service)
   name           String    @db.VarChar(255)
   unit           String?   @db.VarChar(10)
+  ean            String?   @db.VarChar(14) // GTIN/EAN comercial (cEAN); null quando "SEM GTIN"
   nbs_code       String?   @db.VarChar(20)
   category_id    String?   @db.VarChar(26)
   created_at     DateTime  @default(now()) @db.Timestamptz
@@ -85,6 +86,7 @@ model Item {
   @@unique([type, reference_code, name])
   @@index([category_id])
   @@index([deleted_at])
+  @@index([ean])
   // Acelera a busca por similaridade (pg_trgm) na deduplicação de itens na importação.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("items")

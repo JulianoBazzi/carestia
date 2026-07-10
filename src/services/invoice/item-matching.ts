@@ -3,6 +3,7 @@ import type { Prisma } from '~/generated/prisma/client';
 import { newId } from '~/lib/id';
 import { matchKey, normalizeName } from '~/lib/normalize';
 import { normalizeUnit } from '~/lib/units';
+import { validEan } from '~/services/invoice/parser';
 
 /**
  * Limiar de similaridade (0–1, `word_similarity` do pg_trgm) para considerar que
@@ -30,6 +31,8 @@ export interface IItemMatchInput {
   name: string;
   unit?: string | null;
   nbs_code?: string | null;
+  /** GTIN/EAN comercial (cEAN); casamento exato quando presente e válido. */
+  ean?: string | null;
   /** Preço unitário (R$) da linha sendo importada; usado no portão de preço. */
   unitValue?: number | null;
 }
@@ -70,11 +73,27 @@ export async function findOrCreateItem(
   // unidade/NCM fique consistente ('kWh' vs 'KWH', 'l' vs 'L').
   const referenceCode = normalizeName(input.reference_code) ?? input.reference_code;
   const unit = normalizeUnit(input.unit);
+  const ean = validEan(input.ean);
+
+  // Atalho determinístico: mesmo código de barras = mesmo produto. Confiamos no
+  // EAN e reaproveitamos o item direto, sem passar por nome/preço.
+  if (ean) {
+    const hit = await tx.item.findFirst({
+      where: { type: input.type, ean, deleted_at: null },
+      select: { id: true },
+    });
+    if (hit) {
+      return hit.id;
+    }
+  }
 
   // Top-N por similaridade (não só o 1º): o melhor por nome pode falhar no
   // portão de preço enquanto um segundo candidato passa nos dois.
-  const rows = await tx.$queryRaw<{ id: string; sim: number; median_price: number | null }[]>`
+  const rows = await tx.$queryRaw<
+    { id: string; sim: number; median_price: number | null; ean: string | null }[]
+  >`
     SELECT i.id,
+           i.ean,
            word_similarity(${key}::text, regexp_replace(i.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY ii.unit_value) AS median_price
     FROM items i
@@ -98,6 +117,11 @@ export async function findOrCreateItem(
       ),
   );
   if (best) {
+    // Backfill: item casado por nome ainda sem EAN herda o GTIN desta importação,
+    // acelerando (e ancorando) casamentos futuros do mesmo produto.
+    if (ean && best.ean == null) {
+      await tx.item.update({ where: { id: best.id }, data: { ean } });
+    }
     return best.id;
   }
 
@@ -117,6 +141,7 @@ export async function findOrCreateItem(
       reference_code: referenceCode,
       name,
       unit,
+      ean: ean ?? null,
       nbs_code: input.nbs_code ?? null,
     },
     update: {},

@@ -114,6 +114,7 @@ export async function importInvoice(
           reference_code: it.referenceCode,
           name: it.name,
           unit: it.unit,
+          ean: it.ean,
           nbs_code: it.nbsCode,
           unitValue: Number(it.unitValue),
         });
