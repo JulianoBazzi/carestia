@@ -1,6 +1,8 @@
 import { cookies } from 'next/headers';
 import { COOKIE_NAME, type ISessionPayload, verifyToken } from '~/lib/auth/session';
 
+export { isAdmin } from '~/lib/auth/admin';
+
 /**
  * Reads the session from the httpOnly cookie. Use in Server Components and route handlers.
  * Returns null when not authenticated.

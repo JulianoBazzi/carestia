@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { CompaniesCard } from '~/app/companies/components/card';
 import Template from '~/components/Template';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
 
 export default async function CompaniesPage() {
   const session = await getSession();
@@ -9,7 +9,7 @@ export default async function CompaniesPage() {
 
   return (
     <Template>
-      <CompaniesCard />
+      <CompaniesCard canManage={isAdmin(session)} />
     </Template>
   );
 }

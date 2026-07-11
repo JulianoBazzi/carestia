@@ -32,7 +32,11 @@ interface ICategoriesSummary {
   inactive: number;
 }
 
-export function CategoriesCard() {
+interface CategoriesCardProps {
+  canManage: boolean;
+}
+
+export function CategoriesCard({ canManage }: CategoriesCardProps) {
   const modalRef = useRef<CategoryModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
@@ -102,26 +106,28 @@ export function CategoriesCard() {
             >
               <LuPencil />
             </ActionIconButton>
-            <ActionIconButton
-              aria-label="Excluir"
-              colorPalette="red"
-              onClick={() =>
-                confirmRef.current?.open({
-                  title: 'Excluir categoria?',
-                  description: `Tem certeza que deseja excluir a categoria "${row.original.name}"? Os ${row.original.items_count ?? 0} itens vinculados ficarão sem categoria.`,
-                  onConfirm: async () => {
-                    await removeMutation.mutateAsync(row.original.id);
-                  },
-                })
-              }
-            >
-              <LuTrash2 />
-            </ActionIconButton>
+            {canManage && (
+              <ActionIconButton
+                aria-label="Excluir"
+                colorPalette="red"
+                onClick={() =>
+                  confirmRef.current?.open({
+                    title: 'Excluir categoria?',
+                    description: `Tem certeza que deseja excluir a categoria "${row.original.name}"? Os ${row.original.items_count ?? 0} itens vinculados ficarão sem categoria.`,
+                    onConfirm: async () => {
+                      await removeMutation.mutateAsync(row.original.id);
+                    },
+                  })
+                }
+              >
+                <LuTrash2 />
+              </ActionIconButton>
+            )}
           </HStack>
         ),
       },
     ],
-    [removeMutation],
+    [removeMutation, canManage],
   );
 
   return (

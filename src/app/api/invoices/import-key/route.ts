@@ -1,8 +1,9 @@
 import { onlyNumbers } from '@julianobazzi/utils';
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
 import prisma from '~/lib/prisma';
+import { enforceRateLimit } from '~/lib/rate-limit';
 import { importInvoice } from '~/services/invoice/import';
 import { fetchInvoiceXmlByKey, isInfosimplesEnabled } from '~/services/invoice/infosimples';
 
@@ -21,6 +22,12 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
+  if (!isAdmin(session)) {
+    return NextResponse.json({ error: 'Acesso negado.' }, { status: StatusCodes.FORBIDDEN });
+  }
+  // Controle de custo (consulta paga): 30 requisições por hora.
+  const limited = enforceRateLimit(req, 'import-key', 30, 60 * 60 * 1000);
+  if (limited) return limited;
 
   if (!isInfosimplesEnabled()) {
     return NextResponse.json(

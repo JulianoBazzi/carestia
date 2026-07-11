@@ -5,6 +5,7 @@ import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { enforceRateLimit } from '~/lib/rate-limit';
 import { firstIssue, registerSchema } from '~/schemas/auth';
 
 // Beta fechado: novos cadastros estão desabilitados neste primeiro momento.
@@ -12,6 +13,10 @@ import { firstIssue, registerSchema } from '~/schemas/auth';
 const REGISTRATION_OPEN = process.env.REGISTRATION_OPEN === 'true';
 
 export async function POST(req: Request) {
+  // Anti-abuso: 5 cadastros por IP por hora.
+  const limited = enforceRateLimit(req, 'register', 5, 60 * 60 * 1000);
+  if (limited) return limited;
+
   if (!REGISTRATION_OPEN) {
     return NextResponse.json(
       {
@@ -53,6 +58,7 @@ export async function POST(req: Request) {
     sub: user.id,
     name: user.name,
     email: user.email,
+    type: user.type,
   });
 
   const res = NextResponse.json(

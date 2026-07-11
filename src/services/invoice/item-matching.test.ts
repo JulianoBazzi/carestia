@@ -4,6 +4,7 @@ import { matchKey } from '~/lib/normalize';
 import {
   findOrCreateItem,
   PRICE_MATCH_MAX_RATIO,
+  packSize,
   priceWithinBand,
 } from '~/services/invoice/item-matching';
 
@@ -60,7 +61,9 @@ describe('findOrCreateItem — atalho por EAN', () => {
   });
 
   it('faz backfill do EAN em item casado por nome que ainda não tem GTIN', async () => {
-    tx.$queryRaw.mockResolvedValue([{ id: 'item-nome', sim: 0.95, median_price: 25.0, ean: null }]);
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'item-nome', name: 'ARROZ TIPO 1 5KG', sim: 0.95, median_price: 25.0, ean: null },
+    ]);
 
     const id = await findOrCreateItem(tx, {
       type: 'product',
@@ -76,6 +79,81 @@ describe('findOrCreateItem — atalho por EAN', () => {
       where: { id: 'item-nome' },
       data: { ean: '7891234567890' },
     });
+  });
+
+  it('restaura (deleted_at: null) ao casar a unique com um item soft-deletado', async () => {
+    // Sem candidato por similaridade → cai no upsert. O update deve restaurar o
+    // item, evitando reanexar invoice_items a um item "zumbi".
+    await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'ARROZ TIPO 1 5KG',
+      unit: 'UN',
+      ean: null,
+      unitValue: 25.9,
+    });
+
+    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.item.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { deleted_at: null } }),
+    );
+  });
+
+  it('NÃO mescla itens de mesma unidade mas tamanho de embalagem diferente', async () => {
+    // Candidato "ARROZ 1KG" é muito parecido e passaria na banda de preço, mas o
+    // tamanho (1KG vs 5KG) difere → não casa; cria/usa item próprio via upsert.
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'item-1kg', name: 'ARROZ TIPO 1 1KG', sim: 0.9, median_price: 6, ean: null },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'ARROZ TIPO 1 5KG',
+      unit: 'UN',
+      ean: null,
+      unitValue: 25,
+    });
+
+    expect(id).toBe('novo'); // não reusou o item de 1KG
+    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('mescla quando o tamanho de embalagem bate', async () => {
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'item-5kg', name: 'ARROZ BRANCO 5KG', sim: 0.85, median_price: 24, ean: null },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'ARROZ TIPO 1 5KG',
+      unit: 'UN',
+      ean: null,
+      unitValue: 25,
+    });
+
+    expect(id).toBe('item-5kg');
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('packSize', () => {
+  it('extrai o tamanho embutido no nome', () => {
+    expect(packSize('ARROZ TIPO 1 5KG')).toBe('5KG');
+    expect(packSize('Refrigerante 2L')).toBe('2L');
+    expect(packSize('Leite 1,5L')).toBe('1.5L');
+    expect(packSize('Sabão 500G')).toBe('500G');
+  });
+
+  it('retorna null quando não há tamanho', () => {
+    expect(packSize('ARROZ TIPO 1')).toBeNull();
+    expect(packSize('')).toBeNull();
+    expect(packSize(null)).toBeNull();
+  });
+
+  it('distingue tamanhos diferentes do mesmo produto', () => {
+    expect(packSize('ARROZ 1KG')).not.toBe(packSize('ARROZ 5KG'));
   });
 });
 

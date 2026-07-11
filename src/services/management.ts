@@ -1,5 +1,6 @@
 import 'server-only';
 import { isValidCNPJ, onlyNumbers } from '@julianobazzi/utils';
+import { BusinessError } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { normalizeName, slugify } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
@@ -14,7 +15,7 @@ export function listCategories() {
 
 export function createCategory(name: string, active = true) {
   const normalized = normalizeName(name);
-  if (!normalized) throw new Error('Nome obrigatório.');
+  if (!normalized) throw new BusinessError('Nome obrigatório.');
   return prisma.category.create({
     data: { id: newId(), name: normalized, slug: slugify(name), active },
   });
@@ -22,7 +23,7 @@ export function createCategory(name: string, active = true) {
 
 export async function updateCategory(id: string, name: string, active?: boolean): Promise<number> {
   const normalized = normalizeName(name);
-  if (!normalized) throw new Error('Nome obrigatório.');
+  if (!normalized) throw new BusinessError('Nome obrigatório.');
   const result = await prisma.category.updateMany({
     where: { id, deleted_at: null },
     data: { name: normalized, slug: slugify(name), ...(active !== undefined && { active }) },
@@ -80,9 +81,9 @@ export interface IItemInput {
 
 export function createItem(data: IItemInput) {
   const name = normalizeName(data.name);
-  if (!name) throw new Error('Nome obrigatório.');
+  if (!name) throw new BusinessError('Nome obrigatório.');
   const reference_code = normalizeName(data.reference_code);
-  if (!reference_code) throw new Error('Código de referência obrigatório.');
+  if (!reference_code) throw new BusinessError('Código de referência obrigatório.');
   return prisma.item.create({
     data: {
       id: newId(),
@@ -97,9 +98,9 @@ export function createItem(data: IItemInput) {
 
 export async function updateItem(id: string, data: IItemInput): Promise<number> {
   const name = normalizeName(data.name);
-  if (!name) throw new Error('Nome obrigatório.');
+  if (!name) throw new BusinessError('Nome obrigatório.');
   const reference_code = normalizeName(data.reference_code);
-  if (!reference_code) throw new Error('Código de referência obrigatório.');
+  if (!reference_code) throw new BusinessError('Código de referência obrigatório.');
   const result = await prisma.item.updateMany({
     where: { id, deleted_at: null },
     data: {
@@ -126,7 +127,7 @@ export async function deleteItem(id: string): Promise<number> {
  * e marca o source como excluído (soft delete). Tudo em transação.
  */
 export async function mergeItems(sourceId: string, targetId: string): Promise<void> {
-  if (sourceId === targetId) throw new Error('Itens iguais.');
+  if (sourceId === targetId) throw new BusinessError('Itens iguais.');
   await prisma.$transaction([
     prisma.invoiceItem.updateMany({
       where: { item_id: sourceId },
@@ -191,9 +192,9 @@ export interface ICompanyCreate extends ICompanyUpdate {
 
 export function createCompany(data: ICompanyCreate) {
   const document = onlyNumbers(data.document);
-  if (!isValidCNPJ(document)) throw new Error('CNPJ inválido.');
+  if (!isValidCNPJ(document)) throw new BusinessError('CNPJ inválido.');
   const normalized = normalizeCompanyData(data);
-  if (!normalized.social_name) throw new Error('Razão social é obrigatória.');
+  if (!normalized.social_name) throw new BusinessError('Razão social é obrigatória.');
   return prisma.company.create({
     data: {
       id: newId(),

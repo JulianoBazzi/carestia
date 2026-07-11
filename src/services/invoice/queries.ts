@@ -193,7 +193,8 @@ export async function softDeleteInvoice(userId: string, id: string): Promise<num
 /** Pontos de preço unitário (R$) por item, base para inflação/série mensal/comparação IPCA. */
 export async function getInflationRows(userId: string): Promise<IInflationRow[]> {
   const lineItems = await prisma.invoiceItem.findMany({
-    where: { invoice: { user_id: userId, deleted_at: null } },
+    // Exclui itens soft-deletados (ex.: mesclados) — não devem contar na inflação.
+    where: { item: { deleted_at: null }, invoice: { user_id: userId, deleted_at: null } },
     select: {
       unit_value: true,
       item: {

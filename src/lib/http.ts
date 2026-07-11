@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import type { z } from 'zod';
+import { BusinessError } from '~/lib/errors';
 import { firstIssue } from '~/schemas/auth';
 
 export type ParseResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -27,11 +28,26 @@ export function safeRoute<A extends unknown[]>(
     try {
       return await handler(...args);
     } catch (e) {
-      console.error('[api] erro não tratado:', e);
-      return NextResponse.json(
-        { message: 'Erro interno. Tente novamente.' },
-        { status: StatusCodes.INTERNAL_SERVER_ERROR },
-      );
+      return errorResponse(e);
     }
   };
+}
+
+/**
+ * Resposta padronizada para erros em handlers de mutação. Encaminha apenas
+ * mensagens de `BusinessError` (seguras) com o status apropriado; qualquer outro
+ * erro (Prisma, inesperado) é logado no servidor e vira 500 genérico — evita
+ * vazar texto interno de erro para o cliente.
+ */
+export function errorResponse(e: unknown): NextResponse {
+  // Inclui `error` e `message`: as rotas/clientes leem campos diferentes.
+  if (e instanceof BusinessError) {
+    return NextResponse.json({ error: e.message, message: e.message }, { status: e.status });
+  }
+  console.error('[api] erro não tratado:', e);
+  const msg = 'Erro interno. Tente novamente.';
+  return NextResponse.json(
+    { error: msg, message: msg },
+    { status: StatusCodes.INTERNAL_SERVER_ERROR },
+  );
 }

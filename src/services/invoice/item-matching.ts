@@ -25,6 +25,28 @@ export const PRODUCT_SIMILARITY_THRESHOLD = 0.6;
  */
 export const PRICE_MATCH_MAX_RATIO = 5;
 
+// Unidades de embalagem que podem aparecer embutidas no nome do produto.
+const PACK_SIZE_RE = /(\d+(?:[.,]\d+)?)\s?(KG|G|MG|L|ML|KWH|UN|CX|PCT|PC|DZ)\b/g;
+
+/**
+ * Extrai o(s) tamanho(s) de embalagem embutido(s) no nome ("ARROZ 5KG" → "5KG",
+ * "REFRI 2L" → "2L") num formato canônico, ou `null` se não houver. Dois produtos
+ * de mesma unidade mas tamanhos diferentes NÃO devem ser mesclados
+ * automaticamente — o preço unitário é legitimamente diferente.
+ */
+export function packSize(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const upper = name.toUpperCase();
+  const found: string[] = [];
+  for (const m of upper.matchAll(PACK_SIZE_RE)) {
+    const qty = Number(m[1].replace(',', '.'));
+    if (!Number.isFinite(qty)) continue;
+    found.push(`${qty}${m[2]}`);
+  }
+  if (found.length === 0) return null;
+  return found.sort().join('+');
+}
+
 export interface IItemMatchInput {
   type: 'product' | 'service' | 'energy';
   reference_code: string;
@@ -90,9 +112,10 @@ export async function findOrCreateItem(
   // Top-N por similaridade (não só o 1º): o melhor por nome pode falhar no
   // portão de preço enquanto um segundo candidato passa nos dois.
   const rows = await tx.$queryRaw<
-    { id: string; sim: number; median_price: number | null; ean: string | null }[]
+    { id: string; name: string; sim: number; median_price: number | null; ean: string | null }[]
   >`
     SELECT i.id,
+           i.name,
            i.ean,
            word_similarity(${key}::text, regexp_replace(i.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY ii.unit_value) AS median_price
@@ -107,9 +130,14 @@ export async function findOrCreateItem(
     LIMIT 5
   `;
 
+  // Terceiro portão: tamanho de embalagem embutido no nome (ex.: "5KG", "500ML").
+  // Mesma unidade + nome parecido não basta — "ARROZ 1KG" e "ARROZ 5KG" têm o
+  // preço unitário legitimamente diferente e NÃO são o mesmo produto.
+  const inputPack = packSize(input.name);
   const best = rows.find(
     (r) =>
       Number(r.sim) >= PRODUCT_SIMILARITY_THRESHOLD &&
+      packSize(r.name) === inputPack &&
       priceWithinBand(
         input.unitValue,
         r.median_price == null ? null : Number(r.median_price),
@@ -127,6 +155,13 @@ export async function findOrCreateItem(
 
   // Sem candidato parecido: cria. O upsert na unique exata (type+code+name)
   // protege contra corrida de duas importações com nome idêntico.
+  //
+  // Se a unique casar com uma linha soft-deletada (item antes excluído/mesclado),
+  // o Prisma não consegue filtrar `deleted_at` na unique — então o `update`
+  // RESTAURA o item (`deleted_at: null`). Sem isso, os novos invoice_items ficariam
+  // presos a um item "zumbi" (escondido de `listItems`, mas contando em outras
+  // agregações). O produto voltou a ser comprado → deve reaparecer ativo. Para uma
+  // linha que já estava ativa, `deleted_at: null` é no-op inofensivo.
   const item = await tx.item.upsert({
     where: {
       type_reference_code_name: {
@@ -144,7 +179,7 @@ export async function findOrCreateItem(
       ean: ean ?? null,
       nbs_code: input.nbs_code ?? null,
     },
-    update: {},
+    update: { deleted_at: null },
   });
   return item.id;
 }

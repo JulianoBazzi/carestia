@@ -2,9 +2,15 @@ import { unzipSync } from 'fflate';
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
+import { enforceRateLimit } from '~/lib/rate-limit';
 import { type ImportResult, importInvoice } from '~/services/invoice/import';
 
 export const runtime = 'nodejs';
+
+// Limites anti-abuso (o body comprimido já é limitado a 50 MB em next.config.mjs).
+const MAX_FILE_BYTES = 50 * 1024 * 1024; // por arquivo enviado (comprimido)
+const MAX_UNZIPPED_BYTES = 100 * 1024 * 1024; // total descompactado (zip bomb)
+const MAX_ZIP_ENTRIES = 1000; // nº de arquivos dentro do .zip
 
 interface IEntry {
   name: string;
@@ -21,10 +27,24 @@ async function toXmlEntries(file: File): Promise<IEntry[]> {
 
   const buf = new Uint8Array(await file.arrayBuffer());
   const unzipped = unzipSync(buf);
+
+  const names = Object.keys(unzipped);
+  if (names.length > MAX_ZIP_ENTRIES) {
+    throw new Error(`.zip com arquivos demais (limite ${MAX_ZIP_ENTRIES}).`);
+  }
+  // Guarda contra zip bomb: aborta se o total descompactado passar do teto.
+  let total = 0;
+  for (const name of names) {
+    total += unzipped[name].length;
+    if (total > MAX_UNZIPPED_BYTES) {
+      throw new Error('Conteúdo descompactado excede o limite de 100 MB.');
+    }
+  }
+
   const decoder = new TextDecoder();
-  return Object.entries(unzipped)
-    .filter(([name]) => name.toLowerCase().endsWith('.xml'))
-    .map(([name, data]) => ({ name, xml: decoder.decode(data) }));
+  return names
+    .filter((name) => name.toLowerCase().endsWith('.xml'))
+    .map((name) => ({ name, xml: decoder.decode(unzipped[name]) }));
 }
 
 export async function POST(req: Request) {
@@ -32,6 +52,8 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
+  const limited = enforceRateLimit(req, 'import', 60, 60 * 60 * 1000);
+  if (limited) return limited;
 
   const form = await req.formData().catch(() => null);
   if (!form) {
@@ -56,6 +78,15 @@ export async function POST(req: Request) {
   const results: Array<{ file: string } & ImportResult> = [];
 
   for (const file of files) {
+    if (file.size > MAX_FILE_BYTES) {
+      results.push({
+        file: file.name,
+        status: 'error',
+        message: 'Arquivo acima do limite de 50 MB.',
+      });
+      continue;
+    }
+
     let entries: IEntry[];
     try {
       entries = await toXmlEntries(file);

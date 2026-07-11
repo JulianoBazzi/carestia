@@ -21,7 +21,11 @@ function addressOf(company: ICompanyAPI): string {
   return [company.city, company.state].filter(Boolean).join(' · ') || '—';
 }
 
-export function CompaniesCard() {
+interface CompaniesCardProps {
+  canManage: boolean;
+}
+
+export function CompaniesCard({ canManage }: CompaniesCardProps) {
   const modalRef = useRef<CompanyModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
@@ -79,26 +83,28 @@ export function CompaniesCard() {
             >
               <LuPencil />
             </ActionIconButton>
-            <ActionIconButton
-              aria-label="Excluir"
-              colorPalette="red"
-              onClick={() =>
-                confirmRef.current?.open({
-                  title: 'Excluir empresa?',
-                  description: `Tem certeza que deseja excluir "${row.original.fantasy_name || row.original.social_name}"? As notas já importadas continuam disponíveis.`,
-                  onConfirm: async () => {
-                    await removeMutation.mutateAsync(row.original.id);
-                  },
-                })
-              }
-            >
-              <LuTrash2 />
-            </ActionIconButton>
+            {canManage && (
+              <ActionIconButton
+                aria-label="Excluir"
+                colorPalette="red"
+                onClick={() =>
+                  confirmRef.current?.open({
+                    title: 'Excluir empresa?',
+                    description: `Tem certeza que deseja excluir "${row.original.fantasy_name || row.original.social_name}"? As notas já importadas continuam disponíveis.`,
+                    onConfirm: async () => {
+                      await removeMutation.mutateAsync(row.original.id);
+                    },
+                  })
+                }
+              >
+                <LuTrash2 />
+              </ActionIconButton>
+            )}
           </HStack>
         ),
       },
     ],
-    [removeMutation],
+    [removeMutation, canManage],
   );
 
   return (

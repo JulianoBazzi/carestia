@@ -42,9 +42,10 @@ const TYPE_FILTERS = [
 
 interface ItemsCardProps {
   aiEnabled: boolean;
+  canManage: boolean;
 }
 
-export function ItemsCard({ aiEnabled }: ItemsCardProps) {
+export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
   const modalRef = useRef<ItemModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const categorizeModalRef = useRef<CategorizeModalHandle>(null);
@@ -172,26 +173,28 @@ export function ItemsCard({ aiEnabled }: ItemsCardProps) {
             >
               <LuPencil />
             </ActionIconButton>
-            <ActionIconButton
-              aria-label="Excluir"
-              colorPalette="red"
-              onClick={() =>
-                confirmRef.current?.open({
-                  title: 'Excluir item?',
-                  description: `Tem certeza que deseja excluir "${row.original.name}"? Ele será removido da listagem (as notas já importadas continuam intactas).`,
-                  onConfirm: async () => {
-                    await removeMutation.mutateAsync(row.original.id);
-                  },
-                })
-              }
-            >
-              <LuTrash2 />
-            </ActionIconButton>
+            {canManage && (
+              <ActionIconButton
+                aria-label="Excluir"
+                colorPalette="red"
+                onClick={() =>
+                  confirmRef.current?.open({
+                    title: 'Excluir item?',
+                    description: `Tem certeza que deseja excluir "${row.original.name}"? Ele será removido da listagem (as notas já importadas continuam intactas).`,
+                    onConfirm: async () => {
+                      await removeMutation.mutateAsync(row.original.id);
+                    },
+                  })
+                }
+              >
+                <LuTrash2 />
+              </ActionIconButton>
+            )}
           </HStack>
         ),
       },
     ],
-    [categories, setCategoryMutation, removeMutation],
+    [categories, setCategoryMutation, removeMutation, canManage],
   );
 
   return (
@@ -254,51 +257,53 @@ export function ItemsCard({ aiEnabled }: ItemsCardProps) {
         orderBy={{ id: 'name', desc: false }}
       />
 
-      <Box borderWidth="1px" borderRadius="lg" p="4" bg="bg.surface">
-        <Text fontWeight="semibold" mb="1" fontSize="sm">
-          Mesclar itens duplicados
-        </Text>
-        <Text fontSize="xs" color="fg.muted" mb="3">
-          Reaponta o histórico de um item para outro e remove o duplicado.
-        </Text>
-        <HStack gap="2" wrap="wrap" align="end">
-          <NativeSelect.Root size="sm" maxW="64">
-            <NativeSelect.Field value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="">Item de origem (será removido)</option>
-              {allItems.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </NativeSelect.Field>
-            <NativeSelect.Indicator />
-          </NativeSelect.Root>
-          <NativeSelect.Root size="sm" maxW="64">
-            <NativeSelect.Field value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="">Item de destino (será mantido)</option>
-              {allItems.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </NativeSelect.Field>
-            <NativeSelect.Indicator />
-          </NativeSelect.Root>
-          <PrimaryButton
-            size="sm"
-            loading={mergeMutation.isPending}
-            onClick={() => {
-              if (!source || !target || source === target) {
-                errorFeedbackToast('Itens', 'Selecione dois itens diferentes.');
-                return;
-              }
-              mergeMutation.mutate();
-            }}
-          >
-            Mesclar
-          </PrimaryButton>
-        </HStack>
-      </Box>
+      {canManage && (
+        <Box borderWidth="1px" borderRadius="lg" p="4" bg="bg.surface">
+          <Text fontWeight="semibold" mb="1" fontSize="sm">
+            Mesclar itens duplicados
+          </Text>
+          <Text fontSize="xs" color="fg.muted" mb="3">
+            Reaponta o histórico de um item para outro e remove o duplicado.
+          </Text>
+          <HStack gap="2" wrap="wrap" align="end">
+            <NativeSelect.Root size="sm" maxW="64">
+              <NativeSelect.Field value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="">Item de origem (será removido)</option>
+                {allItems.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
+            <NativeSelect.Root size="sm" maxW="64">
+              <NativeSelect.Field value={target} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">Item de destino (será mantido)</option>
+                {allItems.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </NativeSelect.Field>
+              <NativeSelect.Indicator />
+            </NativeSelect.Root>
+            <PrimaryButton
+              size="sm"
+              loading={mergeMutation.isPending}
+              onClick={() => {
+                if (!source || !target || source === target) {
+                  errorFeedbackToast('Itens', 'Selecione dois itens diferentes.');
+                  return;
+                }
+                mergeMutation.mutate();
+              }}
+            >
+              Mesclar
+            </PrimaryButton>
+          </HStack>
+        </Box>
+      )}
 
       <ItemModal ref={modalRef} />
       <ConfirmDialog ref={confirmRef} />

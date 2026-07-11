@@ -43,13 +43,16 @@ Gerenciador de pacotes é **pnpm** (não use npm/yarn). `postinstall` roda `pris
 
 ## Autenticação
 
-JWT via **`jose`** (HS256, expira em 7d), assinado com `AUTH_SECRET`, guardado em cookie httpOnly **`mi_token`**. Senhas com **bcryptjs** (10 rounds). Helpers em `src/lib/auth/`. Use `getCurrentUser()` (`current-user.ts`) em rotas protegidas.
+JWT via **`jose`** (HS256, expira em 7d), assinado com `AUTH_SECRET`, guardado em cookie httpOnly **`mi_token`**. Senhas com **bcryptjs** (10 rounds). Helpers em `src/lib/auth/`. Use `getSession()` (`current-user.ts`) em rotas protegidas (retorna `{ sub, name, email }` ou `null`).
+
+**Papel de usuário:** coluna `users.type` (`admin` | `user`, default `user`; o admin é definido pelo `prisma/seed.ts`). O papel viaja no JWT (`session.type`) — checagem via `isAdmin(session)` (`src/lib/auth/admin.ts`, módulo puro reexportado por `current-user.ts`, sem tocar o banco; funciona no middleware). Trocar o papel exige novo login. **Recursos só-admin:** "Importar por chave" (Infosimples), "Categorizar com IA" (OpenAI) e **excluir/mesclar** o catálogo global (empresas, categorias, itens) — a UI é escondida e as rotas de API retornam 403 (criar/editar seguem liberados a qualquer usuário logado).
 
 ## Integrações externas
 
 - **BCB SGS 433** (`ipca.ts`) — IPCA mensal, cache 24h; retorna `[]` em falha (degrada para índice só pessoal).
 - **BrasilAPI** (`brasilapi.ts`) — enriquece empresas por CNPJ.
-- **Infosimples** (`invoice/infosimples.ts`) — busca XML da NF por chave de acesso de 44 dígitos; **gated por `INFOSIMPLES_TOKEN`** (sem o token, "Importar por chave" fica desabilitado na UI).
+- **Infosimples** (`invoice/infosimples.ts`) — busca XML da NF por chave de acesso de 44 dígitos; **gated por `INFOSIMPLES_TOKEN` + admin** (sem o token ou não sendo admin, "Importar por chave" fica escondido).
+- **OpenAI** (`services/openai.ts`) — categoriza itens (produtos) numa das categorias padrão via structured output; **gated por `OPENAI_API_KEY` + admin**. Degrada para `null` em falha (não quebra o lote).
 - **DANF3e** (`invoice/danfe-*.ts`) — extrai texto de PDFs de conta de energia via `unpdf` (sem OCR; PDFs escaneados retornam parcial).
 
 ## Variáveis de ambiente
@@ -57,8 +60,9 @@ JWT via **`jose`** (HS256, expira em 7d), assinado com `AUTH_SECRET`, guardado e
 Copie `.env.example` para `.env.local`:
 
 - `DATABASE_URL` — Postgres.
-- `AUTH_SECRET` — segredo aleatório de 32 bytes (assinatura JWT).
-- `INFOSIMPLES_TOKEN` — opcional; habilita importação por chave.
+- `AUTH_SECRET` — segredo aleatório de **≥32 caracteres** (assinatura JWT; a app recusa iniciar com segredo curto).
+- `INFOSIMPLES_TOKEN` — opcional; habilita importação por chave (só admin).
+- `OPENAI_API_KEY` — opcional; habilita categorização por IA (só admin).
 - `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_API_URL`.
 
 ## Testes

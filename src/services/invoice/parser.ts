@@ -251,25 +251,30 @@ export function parseNF3e(obj: any): IParsedInvoice {
     ibgeCode: acessAddr.cMun ? str(acessAddr.cMun) : undefined,
   };
 
-  const items: IItemDTO[] = toArray(infNF3e.det).map((det) => {
+  const items: IItemDTO[] = toArray(infNF3e.det).flatMap((det) => {
     const di = det.detItem ?? det.det ?? det;
     const cClass = str(di.cClass);
     const description = str(di.xProd ?? di.descricao ?? di.xDesc ?? '') || cClassLabel(cClass);
     const unit = str(di.uMed ?? di.uCom) || 'kWh';
     const qFaturada = Number(str(di.qFaturada ?? di.qCom ?? '0'));
     const vItem = str(di.vItem ?? di.vProd ?? '0');
-    // Preço unitário R$/kWh = valor do item ÷ quantidade faturada (quando houver).
-    const unitValue = qFaturada > 0 ? String(Number(vItem) / qFaturada) : vItem;
-    return {
-      type: 'energy' as const,
-      referenceCode: cClass,
-      name: description,
-      unit,
-      description,
-      quantity: str(qFaturada), // transitório — não persistido
-      unitValue,
-      totalValue: vItem, // transitório
-    };
+    // Sem quantidade faturada válida não há como calcular R$/kWh. Pular a linha —
+    // gravar o TOTAL como se fosse preço unitário poluiria a série de energia.
+    if (!(qFaturada > 0)) return [];
+    // Preço unitário R$/kWh = valor do item ÷ quantidade faturada.
+    const unitValue = String(Number(vItem) / qFaturada);
+    return [
+      {
+        type: 'energy' as const,
+        referenceCode: cClass,
+        name: description,
+        unit,
+        description,
+        quantity: str(qFaturada), // transitório — não persistido
+        unitValue,
+        totalValue: vItem, // transitório
+      },
+    ];
   });
 
   const invoice: IInvoiceDTO = {

@@ -2,7 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSession } from '~/lib/auth/current-user';
-import { parseBody, safeRoute } from '~/lib/http';
+import { errorResponse, parseBody, safeRoute } from '~/lib/http';
 import { buildMeta, getPaginationParams } from '~/lib/pagination';
 import prisma from '~/lib/prisma';
 import { categorySchema } from '~/schemas/category';
@@ -77,9 +77,6 @@ export async function POST(req: Request) {
         { status: StatusCodes.CONFLICT },
       );
     }
-    return NextResponse.json(
-      { message: (e as Error).message },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+    return errorResponse(e);
   }
 }

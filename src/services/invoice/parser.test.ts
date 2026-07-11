@@ -68,6 +68,14 @@ describe('parseXml NF3e (energia, mod 66)', () => {
     expect(cosip.referenceCode).toBe('0801000');
     expect(Number(cosip.unitValue)).toBeCloseTo(2.5); // qFaturada 1
   });
+
+  it('pula a linha sem qFaturada válida (não grava o total como R$/kWh)', () => {
+    const semQtd = nf3e.replace('<qFaturada>250</qFaturada>', '<qFaturada>0</qFaturada>');
+    const p = parseXml(semQtd);
+    // A linha de consumo (qFaturada=0) é descartada; sobra só o COSIP (qFaturada=1).
+    expect(p.items).toHaveLength(1);
+    expect(p.items[0].referenceCode).toBe('0801000');
+  });
 });
 
 describe('parseXml NF-e', () => {

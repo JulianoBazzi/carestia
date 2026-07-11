@@ -29,7 +29,12 @@ export const PATCH = safeRoute(async (req: Request) => {
     data: { name: normalizeName(parsed.data.name) ?? parsed.data.name },
   });
 
-  const token = await createToken({ sub: user.id, name: user.name, email: user.email });
+  const token = await createToken({
+    sub: user.id,
+    name: user.name,
+    email: user.email,
+    type: user.type,
+  });
   const res = NextResponse.json({ data: { name: user.name, email: user.email } });
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,

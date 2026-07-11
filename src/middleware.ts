@@ -1,11 +1,20 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import { isAdmin } from '~/lib/auth/admin';
 import { COOKIE_NAME, verifyToken } from '~/lib/auth/session';
 
 // Rotas públicas (acessíveis sem login).
 const PUBLIC_PATHS = new Set(['/', '/login', '/register', '/terms', '/privacy']);
 
+// Telas restritas ao admin (defesa em profundidade — as rotas de API também
+// checam por conta própria e retornam 403).
+const ADMIN_PATHS = ['/invoices/import/key'];
+
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname) || pathname.startsWith('/api/public');
+}
+
+function isAdminPath(pathname: string): boolean {
+  return ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export async function middleware(req: NextRequest) {
@@ -19,6 +28,12 @@ export async function middleware(req: NextRequest) {
   if (!session) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
+
+  if (isAdminPath(req.nextUrl.pathname) && !isAdmin(session)) {
+    const url = req.nextUrl.clone();
+    url.pathname = '/invoices';
     return NextResponse.redirect(url);
   }
 

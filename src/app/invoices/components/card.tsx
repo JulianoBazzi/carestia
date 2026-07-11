@@ -24,7 +24,11 @@ import { useCompanies } from '~/services/hooks/useCompanies';
 import { invoiceModelInfo, useInvoices } from '~/services/hooks/useInvoices';
 import { queryClient } from '~/services/queryClient';
 
-export function InvoicesCard() {
+interface InvoicesCardProps {
+  keyImportEnabled: boolean;
+}
+
+export function InvoicesCard({ keyImportEnabled }: InvoicesCardProps) {
   const modalRef = useRef<InvoiceModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
@@ -189,11 +193,13 @@ export function InvoicesCard() {
           <Button size="sm" variant="outline" onClick={() => modalRef.current?.onOpenDialog()}>
             <LuPlus /> Nova nota
           </Button>
-          <Button size="sm" variant="outline" asChild>
-            <NextLink href="/invoices/import/key">
-              <LuKeyRound /> Importar por chave
-            </NextLink>
-          </Button>
+          {keyImportEnabled && (
+            <Button size="sm" variant="outline" asChild>
+              <NextLink href="/invoices/import/key">
+                <LuKeyRound /> Importar por chave
+              </NextLink>
+            </Button>
+          )}
           <PrimaryButton size="sm" asChild>
             <NextLink href="/invoices/import">
               <LuUpload /> Importar XML

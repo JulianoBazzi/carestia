@@ -3,9 +3,14 @@ import { NextResponse } from 'next/server';
 import { verifyPassword } from '~/lib/auth/password';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import prisma from '~/lib/prisma';
+import { enforceRateLimit } from '~/lib/rate-limit';
 import { firstIssue, loginSchema } from '~/schemas/auth';
 
 export async function POST(req: Request) {
+  // Anti brute-force: 10 tentativas por IP a cada 15 min.
+  const limited = enforceRateLimit(req, 'login', 10, 15 * 60 * 1000);
+  if (limited) return limited;
+
   const body = await req.json().catch(() => ({}));
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
@@ -33,6 +38,7 @@ export async function POST(req: Request) {
     sub: user.id,
     name: user.name,
     email: user.email,
+    type: user.type,
   });
 
   const res = NextResponse.json(

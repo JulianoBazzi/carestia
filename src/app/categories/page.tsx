@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { CategoriesCard } from '~/app/categories/components/card';
 import Template from '~/components/Template';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
 
 export default async function CategoriesPage() {
   const session = await getSession();
@@ -9,7 +9,7 @@ export default async function CategoriesPage() {
 
   return (
     <Template>
-      <CategoriesCard />
+      <CategoriesCard canManage={isAdmin(session)} />
     </Template>
   );
 }

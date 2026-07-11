@@ -1,7 +1,8 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
 import prisma from '~/lib/prisma';
+import { enforceRateLimit } from '~/lib/rate-limit';
 import { setItemCategory } from '~/services/management';
 import { categorizeItem, isAiEnabled } from '~/services/openai';
 
@@ -22,6 +23,13 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
+  if (!isAdmin(session)) {
+    return NextResponse.json({ message: 'Acesso negado.' }, { status: StatusCodes.FORBIDDEN });
+  }
+  // Controle de custo (tokens pagos): 20 requisições por hora.
+  const limited = enforceRateLimit(req, 'categorize', 20, 60 * 60 * 1000);
+  if (limited) return limited;
+
   if (!isAiEnabled()) {
     return NextResponse.json(
       { message: 'Categorização por IA indisponível (OPENAI_API_KEY não configurado).' },

@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
+import { errorResponse } from '~/lib/http';
 import { deleteItem, type IItemInput, setItemCategory, updateItem } from '~/services/management';
 
 export const runtime = 'nodejs';
@@ -67,10 +68,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         { status: StatusCodes.CONFLICT },
       );
     }
-    return NextResponse.json(
-      { message: (e as Error).message },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+    return errorResponse(e);
   }
 }
 
@@ -78,6 +76,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
+  }
+  if (!isAdmin(session)) {
+    return NextResponse.json({ message: 'Acesso negado.' }, { status: StatusCodes.FORBIDDEN });
   }
 
   const { id } = await params;

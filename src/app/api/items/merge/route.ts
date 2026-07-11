@@ -1,8 +1,8 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSession } from '~/lib/auth/current-user';
-import { parseBody } from '~/lib/http';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
+import { errorResponse, parseBody } from '~/lib/http';
 import { zulid } from '~/schemas/lib';
 import { mergeItems } from '~/services/management';
 
@@ -15,6 +15,9 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
+  if (!isAdmin(session)) {
+    return NextResponse.json({ message: 'Acesso negado.' }, { status: StatusCodes.FORBIDDEN });
+  }
 
   const body = await req.json().catch(() => ({}));
   const parsed = parseBody(mergeSchema, body);
@@ -26,10 +29,7 @@ export async function POST(req: Request) {
   try {
     await mergeItems(sourceId, targetId);
   } catch (e) {
-    return NextResponse.json(
-      { message: (e as Error).message },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+    return errorResponse(e);
   }
   return NextResponse.json({ data: { sourceId, targetId } }, { status: StatusCodes.OK });
 }

@@ -27,6 +27,13 @@ enum InvoiceModel {
   @@map("invoice_model")
 }
 
+enum UserType {
+  user
+  admin
+
+  @@map("user_type")
+}
+
 // Tabelas globais (todo o sistema)
 
 model Category {
@@ -99,6 +106,7 @@ model User {
   name       String    @db.VarChar(255)
   email      String    @unique @db.VarChar(255)
   password   String    @db.VarChar(255)
+  type       UserType  @default(user) // papel: 'user' (padrão) | 'admin'
   active     Boolean   @default(true)
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz

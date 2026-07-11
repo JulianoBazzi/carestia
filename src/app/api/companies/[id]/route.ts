@@ -1,6 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
 import {
   deleteCompany,
   getCompany,
@@ -75,6 +75,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
+  }
+  if (!isAdmin(session)) {
+    return NextResponse.json({ message: 'Acesso negado.' }, { status: StatusCodes.FORBIDDEN });
   }
 
   const { id } = await params;
