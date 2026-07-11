@@ -12,6 +12,7 @@ function makeTx() {
   return {
     item: {
       findFirst: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({ id: 'x' }),
       upsert: vi.fn().mockResolvedValue({ id: 'novo' }),
     },
@@ -82,9 +83,16 @@ describe('findOrCreateItem — atalho por EAN', () => {
   });
 
   it('restaura (deleted_at: null) ao casar a unique com um item soft-deletado', async () => {
-    // Sem candidato por similaridade → cai no upsert. O update deve restaurar o
-    // item, evitando reanexar invoice_items a um item "zumbi".
-    await findOrCreateItem(tx, {
+    // Sem candidato por similaridade → a unique exata acha um item "zumbi"
+    // (soft-deletado, não ignorado): restaura, evitando reanexar invoice_items
+    // a um item escondido.
+    tx.item.findUnique.mockResolvedValue({
+      id: 'zumbi',
+      deleted_at: new Date('2026-01-01'),
+      ignored_at: null,
+    });
+
+    const id = await findOrCreateItem(tx, {
       type: 'product',
       reference_code: '10063021',
       name: 'ARROZ TIPO 1 5KG',
@@ -93,10 +101,67 @@ describe('findOrCreateItem — atalho por EAN', () => {
       unitValue: 25.9,
     });
 
-    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
-    expect(tx.item.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: { deleted_at: null } }),
-    );
+    expect(id).toBe('zumbi');
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'zumbi' },
+      data: { deleted_at: null },
+    });
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna null (linha bloqueada) quando a unique casa um item IGNORADO', async () => {
+    tx.item.findUnique.mockResolvedValue({
+      id: 'bloqueado',
+      deleted_at: new Date('2026-01-01'),
+      ignored_at: new Date('2026-01-01'),
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'ARROZ TIPO 1 5KG',
+      unit: 'UN',
+      ean: null,
+      unitValue: 25.9,
+    });
+
+    expect(id).toBeNull();
+    // Nunca reativa nem cria: o bloqueio é permanente.
+    expect(tx.item.update).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna null quando o EAN pertence a um item IGNORADO', async () => {
+    // 1º findFirst (ativos) não acha; 2º findFirst (ignorados) acha.
+    tx.item.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'bloqueado' });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'OUTRO NOME QUALQUER',
+      unit: 'UN',
+      ean: '7891234567890',
+      unitValue: 25.9,
+    });
+
+    expect(id).toBeNull();
+    // Bloqueia antes da similaridade e da criação.
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('cria com upsert de update vazio (absorve corrida sem des-esconder item)', async () => {
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'ARROZ TIPO 1 5KG',
+      unit: 'UN',
+      ean: null,
+      unitValue: 25.9,
+    });
+
+    expect(id).toBe('novo');
+    expect(tx.item.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: {} }));
   });
 
   it('NÃO mescla itens de mesma unidade mas tamanho de embalagem diferente', async () => {

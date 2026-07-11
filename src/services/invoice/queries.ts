@@ -1,4 +1,5 @@
 import 'server-only';
+import { BusinessError } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
@@ -52,6 +53,13 @@ async function buildLineItems(
       name: it.description,
       unit,
     });
+    // Diferente da importação de XML (que só pula a linha), aqui o usuário
+    // digitou o item — descartar em silêncio seria perda invisível de dados.
+    if (itemId === null) {
+      throw new BusinessError(
+        `O item "${name}" foi ignorado pela administração e não pode ser usado em notas.`,
+      );
+    }
     await tx.invoiceItem.create({
       data: {
         id: newId(),

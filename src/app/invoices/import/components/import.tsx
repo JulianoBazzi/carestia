@@ -45,6 +45,7 @@ interface IImportResult {
   file: string;
   status: 'imported' | 'duplicated' | 'error';
   message?: string;
+  ignoredItems?: number;
 }
 
 interface IImportResponse {
@@ -203,7 +204,10 @@ export function InvoiceImport() {
       const result = data.results[0];
       patch(entry.id, {
         status: result?.status ?? 'error',
-        message: result?.message,
+        message:
+          result?.status === 'imported' && result.ignoredItems
+            ? `${result.ignoredItems} item(ns) ignorado(s) pela administração`
+            : result?.message,
       });
     } catch (e) {
       const message =
@@ -370,11 +374,16 @@ export function InvoiceImport() {
                           <Text fontSize="sm" fontWeight="medium" truncate>
                             {entry.name}
                           </Text>
-                          {entry.status === 'error' && entry.message && (
-                            <Text fontSize="xs" color="red.500">
-                              {entry.message}
-                            </Text>
-                          )}
+                          {entry.message &&
+                            (entry.status === 'error' ? (
+                              <Text fontSize="xs" color="red.500">
+                                {entry.message}
+                              </Text>
+                            ) : (
+                              <Text fontSize="xs" color="fg.muted">
+                                {entry.message}
+                              </Text>
+                            ))}
                         </Stack>
                       </HStack>
                       <StatusBadge

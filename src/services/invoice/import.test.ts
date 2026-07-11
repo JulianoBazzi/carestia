@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { tx, prismaMock, fetchCnpj } = vi.hoisted(() => {
   const tx = {
     company: { upsert: vi.fn() },
-    item: { upsert: vi.fn() },
+    item: { findUnique: vi.fn(), upsert: vi.fn() },
     invoice: { create: vi.fn() },
     $queryRaw: vi.fn(),
   };
@@ -35,6 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
   tx.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
+  tx.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
   tx.company.upsert.mockResolvedValue({ id: 'company-1' });
   tx.item.upsert.mockResolvedValue({ id: 'item-1' });
   tx.invoice.create.mockResolvedValue({ id: 'invoice-1' });
@@ -92,6 +93,29 @@ describe('importInvoice — dedup por similaridade (pg_trgm)', () => {
     expect(tx.item.upsert).not.toHaveBeenCalled();
     const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
     expect(invoiceArg.items.create[0].item_id).toBe('item-existente');
+  });
+});
+
+describe('importInvoice — item ignorado', () => {
+  it('descarta a linha de item ignorado, mas ainda cria a nota (dedup por chave)', async () => {
+    // A unique exata casa um item permanentemente ignorado pela administração.
+    tx.item.findUnique.mockResolvedValue({
+      id: 'bloqueado',
+      deleted_at: new Date('2026-01-01'),
+      ignored_at: new Date('2026-01-01'),
+    });
+
+    const result = await importInvoice('user-1', nfe);
+
+    expect(result).toEqual({
+      status: 'imported',
+      invoiceId: 'invoice-1',
+      accessKey: '51260602760668000677550010001165321018655643',
+      ignoredItems: 1,
+    });
+    // Nem cria item novo, nem anexa a linha à nota.
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+    expect(tx.invoice.create.mock.calls[0][0].data.items.create).toEqual([]);
   });
 });
 

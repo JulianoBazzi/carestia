@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
+import { errorResponse } from '~/lib/http';
 import {
   getInvoice,
   type IInvoiceItemInput,
@@ -85,21 +86,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }))
     : [];
 
-  const count = await updateInvoice(session.sub, id, {
-    model,
-    number,
-    series: typeof body.series === 'string' && body.series ? body.series : null,
-    issuedAt,
-    neighborhood:
-      typeof body.neighborhood === 'string' && body.neighborhood ? body.neighborhood : null,
-    city: typeof body.city === 'string' && body.city ? body.city : null,
-    state: typeof body.state === 'string' && body.state ? body.state : null,
-    items,
-  });
-  if (count === 0) {
-    return NextResponse.json({ error: 'Nota não encontrada.' }, { status: StatusCodes.NOT_FOUND });
+  try {
+    const count = await updateInvoice(session.sub, id, {
+      model,
+      number,
+      series: typeof body.series === 'string' && body.series ? body.series : null,
+      issuedAt,
+      neighborhood:
+        typeof body.neighborhood === 'string' && body.neighborhood ? body.neighborhood : null,
+      city: typeof body.city === 'string' && body.city ? body.city : null,
+      state: typeof body.state === 'string' && body.state ? body.state : null,
+      items,
+    });
+    if (count === 0) {
+      return NextResponse.json(
+        { error: 'Nota não encontrada.' },
+        { status: StatusCodes.NOT_FOUND },
+      );
+    }
+    return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
+  } catch (e) {
+    return errorResponse(e);
   }
-  return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

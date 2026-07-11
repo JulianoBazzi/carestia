@@ -2,7 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession, isAdmin } from '~/lib/auth/current-user';
 import { errorResponse } from '~/lib/http';
-import { deleteItem, type IItemInput, setItemCategory, updateItem } from '~/services/management';
+import { type IItemInput, ignoreItem, setItemCategory, updateItem } from '~/services/management';
 
 export const runtime = 'nodejs';
 
@@ -82,7 +82,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
 
   const { id } = await params;
-  const count = await deleteItem(id);
+  const count = await ignoreItem(id);
   if (count === 0) {
     return NextResponse.json(
       { message: 'Item não encontrado.' },

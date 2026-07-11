@@ -114,10 +114,16 @@ export async function updateItem(id: string, data: IItemInput): Promise<number> 
   return result.count;
 }
 
-export async function deleteItem(id: string): Promise<number> {
+/**
+ * Ignora um item permanentemente: soft delete (some das listagens e agregações,
+ * que já filtram `deleted_at`) + `ignored_at`, que impede a importação de
+ * recriar/reativar o item (ver `findOrCreateItem`).
+ */
+export async function ignoreItem(id: string): Promise<number> {
+  const now = new Date();
   const result = await prisma.item.updateMany({
     where: { id, deleted_at: null },
-    data: { deleted_at: new Date() },
+    data: { deleted_at: now, ignored_at: now },
   });
   return result.count;
 }
@@ -128,6 +134,12 @@ export async function deleteItem(id: string): Promise<number> {
  */
 export async function mergeItems(sourceId: string, targetId: string): Promise<void> {
   if (sourceId === targetId) throw new BusinessError('Itens iguais.');
+  // Impede mesclar PARA um item oculto/ignorado via API (a UI só lista ativos).
+  const target = await prisma.item.findFirst({
+    where: { id: targetId, deleted_at: null },
+    select: { id: true },
+  });
+  if (!target) throw new BusinessError('Item de destino não encontrado.');
   await prisma.$transaction([
     prisma.invoiceItem.updateMany({
       where: { item_id: sourceId },

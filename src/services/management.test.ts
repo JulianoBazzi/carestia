@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     invoiceItem: { updateMany: vi.fn() },
-    item: { update: vi.fn(), create: vi.fn() },
+    item: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     company: { create: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -11,12 +11,14 @@ const { prismaMock } = vi.hoisted(() => ({
 
 vi.mock('~/lib/prisma', () => ({ default: prismaMock }));
 
-import { createItem, mergeItems } from '~/services/management';
+import { createItem, ignoreItem, mergeItems } from '~/services/management';
 
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.invoiceItem.updateMany.mockReturnValue('reassign-op');
+  prismaMock.item.findFirst.mockResolvedValue({ id: 'target-1' });
   prismaMock.item.update.mockReturnValue('soft-delete-op');
+  prismaMock.item.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.item.create.mockResolvedValue({ id: 'item-1' });
   prismaMock.$transaction.mockResolvedValue([]);
 });
@@ -50,9 +52,35 @@ describe('createItem', () => {
   });
 });
 
+describe('ignoreItem', () => {
+  it('marca deleted_at E ignored_at (bloqueio permanente), só em item ativo', async () => {
+    const count = await ignoreItem('item-1');
+
+    expect(count).toBe(1);
+    expect(prismaMock.item.updateMany).toHaveBeenCalledWith({
+      where: { id: 'item-1', deleted_at: null },
+      data: { deleted_at: expect.any(Date), ignored_at: expect.any(Date) },
+    });
+  });
+
+  it('retorna 0 quando o item já está oculto (vira 404 na rota)', async () => {
+    prismaMock.item.updateMany.mockResolvedValue({ count: 0 });
+    await expect(ignoreItem('item-oculto')).resolves.toBe(0);
+  });
+});
+
 describe('mergeItems', () => {
   it('rejeita mesclar um item com ele mesmo', async () => {
     await expect(mergeItems('item-1', 'item-1')).rejects.toThrow('Itens iguais.');
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejeita quando o destino não existe ou está oculto/ignorado', async () => {
+    prismaMock.item.findFirst.mockResolvedValue(null);
+
+    await expect(mergeItems('source-1', 'target-x')).rejects.toThrow(
+      'Item de destino não encontrado.',
+    );
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 

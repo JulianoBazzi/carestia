@@ -14,7 +14,7 @@ import {
 import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
-import { LuPencil, LuPlus, LuSparkles, LuTrash2 } from 'react-icons/lu';
+import { LuBan, LuPencil, LuPlus, LuSparkles } from 'react-icons/lu';
 import {
   CategorizeModal,
   type CategorizeModalHandle,
@@ -80,7 +80,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
   const removeMutation = useMutation({
     mutationFn: (id: string) => api.delete(`${API_URL_ITEMS}/${id}`),
     async onSuccess() {
-      successFeedbackToast('Item', 'Excluído com sucesso!');
+      successFeedbackToast('Item', 'Item ignorado.');
       await queryClient.invalidateQueries({ queryKey: [TABLE_ITEMS] });
     },
     onError(error: Error) {
@@ -175,19 +175,19 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
             </ActionIconButton>
             {canManage && (
               <ActionIconButton
-                aria-label="Excluir"
+                aria-label="Ignorar"
                 colorPalette="red"
                 onClick={() =>
                   confirmRef.current?.open({
-                    title: 'Excluir item?',
-                    description: `Tem certeza que deseja excluir "${row.original.name}"? Ele será removido da listagem (as notas já importadas continuam intactas).`,
+                    title: 'Ignorar item?',
+                    description: `Tem certeza que deseja ignorar "${row.original.name}"? Ele sairá das listagens e dos índices e nunca será recriado por importações futuras. As notas já importadas continuam intactas. Esta ação não pode ser desfeita.`,
                     onConfirm: async () => {
                       await removeMutation.mutateAsync(row.original.id);
                     },
                   })
                 }
               >
-                <LuTrash2 />
+                <LuBan />
               </ActionIconButton>
             )}
           </HStack>

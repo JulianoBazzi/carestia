@@ -4,7 +4,7 @@ const { tx, prismaMock } = vi.hoisted(() => {
   const tx = {
     invoice: { update: vi.fn(), create: vi.fn() },
     invoiceItem: { deleteMany: vi.fn(), create: vi.fn() },
-    item: { upsert: vi.fn() },
+    item: { findUnique: vi.fn(), upsert: vi.fn() },
     $queryRaw: vi.fn(),
   };
   return {
@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
   tx.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
+  tx.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
   tx.item.upsert.mockResolvedValue({ id: 'item-x' });
   tx.invoiceItem.create.mockResolvedValue({});
   tx.invoiceItem.deleteMany.mockResolvedValue({ count: 0 });
@@ -80,6 +81,32 @@ describe('updateInvoice', () => {
     expect(tx.item.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: expect.objectContaining({ type: 'energy' }) }),
     );
+  });
+});
+
+describe('itens ignorados (bloqueio permanente)', () => {
+  const ignored = {
+    id: 'bloqueado',
+    deleted_at: new Date('2026-01-01'),
+    ignored_at: new Date('2026-01-01'),
+  };
+
+  it('updateInvoice rejeita linha que casa um item ignorado', async () => {
+    prismaMock.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
+    tx.item.findUnique.mockResolvedValue(ignored);
+
+    await expect(updateInvoice('user-1', 'inv-1', baseData)).rejects.toThrow(
+      'foi ignorado pela administração',
+    );
+    expect(tx.invoiceItem.create).not.toHaveBeenCalled();
+  });
+
+  it('createInvoiceManual rejeita linha que casa um item ignorado', async () => {
+    tx.item.findUnique.mockResolvedValue(ignored);
+
+    await expect(
+      createInvoiceManual('user-1', { ...baseData, companyId: 'company-1', accessKey: 'manual-2' }),
+    ).rejects.toThrow('foi ignorado pela administração');
   });
 });
 

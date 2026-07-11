@@ -7,7 +7,7 @@ import { findOrCreateItem } from '~/services/invoice/item-matching';
 import { type ICompanyDTO, type IParsedInvoice, parseXml } from '~/services/invoice/parser';
 
 export type ImportResult =
-  | { status: 'imported'; invoiceId: string; accessKey: string }
+  | { status: 'imported'; invoiceId: string; accessKey: string; ignoredItems?: number }
   | { status: 'duplicated'; accessKey: string }
   | { status: 'error'; message: string };
 
@@ -83,7 +83,7 @@ export async function importInvoice(
   const { data: companyData, origin } = await resolveCompany(parsed.company);
 
   try {
-    const invoiceId = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const company = await tx.company.upsert({
         where: { document: companyData.document },
         create: {
@@ -107,6 +107,7 @@ export async function importInvoice(
       });
 
       const lineItems = [];
+      let ignoredItems = 0;
       for (const it of parsed.items) {
         // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
         const itemId = await findOrCreateItem(tx, {
@@ -118,6 +119,12 @@ export async function importInvoice(
           nbs_code: it.nbsCode,
           unitValue: Number(it.unitValue),
         });
+        // Item ignorado pela administração: a linha é descartada (a nota ainda é
+        // criada, preservando o dedup por access_key).
+        if (itemId === null) {
+          ignoredItems += 1;
+          continue;
+        }
         lineItems.push({
           id: newId(),
           item_id: itemId,
@@ -137,7 +144,7 @@ export async function importInvoice(
         ibgeCode: companyData.ibgeCode,
       };
 
-      const invoice = await tx.invoice.create({
+      const created = await tx.invoice.create({
         data: {
           id: newId(),
           user_id: userId,
@@ -156,13 +163,15 @@ export async function importInvoice(
         },
       });
 
-      return invoice.id;
+      return { invoiceId: created.id, ignoredItems };
     });
 
     return {
       status: 'imported',
-      invoiceId,
+      invoiceId: result.invoiceId,
       accessKey: parsed.invoice.accessKey,
+      // Só informa quando houve linha bloqueada (mantém o payload enxuto).
+      ...(result.ignoredItems > 0 && { ignoredItems: result.ignoredItems }),
     };
   } catch (e) {
     if (

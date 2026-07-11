@@ -76,7 +76,8 @@ export function priceWithinBand(
 /**
  * Encontra um `Item` global equivalente (mesmo tipo+código+unidade, nome parecido
  * e preço compatível) e o reaproveita; se nenhum passar nos dois portões, cria um
- * novo. Retorna o `id` do item.
+ * novo. Retorna o `id` do item, ou `null` quando a linha casa com um item
+ * IGNORADO (`ignored_at`) — o chamador deve descartar a linha, nunca recriar.
  *
  * A extensão `pg_trgm` (habilitada no schema) faz o casamento por similaridade,
  * absorvendo variações de descrição do mesmo produto entre emitentes
@@ -87,7 +88,7 @@ export function priceWithinBand(
 export async function findOrCreateItem(
   tx: Prisma.TransactionClient,
   input: IItemMatchInput,
-): Promise<string> {
+): Promise<string | null> {
   const name = normalizeName(input.name) ?? input.name;
   const key = matchKey(input.name);
   // Normaliza código e unidade (UPPERCASE + sem acento) no único choke point,
@@ -106,6 +107,16 @@ export async function findOrCreateItem(
     });
     if (hit) {
       return hit.id;
+    }
+    // Mesmo GTIN de um item IGNORADO: a linha é bloqueada — recriar sob outro
+    // nome burlaria o bloqueio permanente. Itens apenas soft-deletados (ex.:
+    // mesclados) não entram aqui e seguem o fluxo normal.
+    const ignored = await tx.item.findFirst({
+      where: { type: input.type, ean, ignored_at: { not: null } },
+      select: { id: true },
+    });
+    if (ignored) {
+      return null;
     }
   }
 
@@ -153,15 +164,39 @@ export async function findOrCreateItem(
     return best.id;
   }
 
-  // Sem candidato parecido: cria. O upsert na unique exata (type+code+name)
-  // protege contra corrida de duas importações com nome idêntico.
-  //
-  // Se a unique casar com uma linha soft-deletada (item antes excluído/mesclado),
-  // o Prisma não consegue filtrar `deleted_at` na unique — então o `update`
-  // RESTAURA o item (`deleted_at: null`). Sem isso, os novos invoice_items ficariam
-  // presos a um item "zumbi" (escondido de `listItems`, mas contando em outras
-  // agregações). O produto voltou a ser comprado → deve reaparecer ativo. Para uma
-  // linha que já estava ativa, `deleted_at: null` é no-op inofensivo.
+  // Sem candidato parecido: olha a unique exata (type+code+name) ANTES de criar,
+  // enxergando também linhas soft-deletadas (a unique não filtra `deleted_at`):
+  // - IGNORADO (`ignored_at`): bloqueio permanente — a linha é descartada e o
+  //   item NUNCA é reativado.
+  // - Soft-deletado comum (ex.: mesclado): o produto voltou a ser comprado →
+  //   RESTAURA (`deleted_at: null`); sem isso os novos invoice_items ficariam
+  //   presos a um item "zumbi" (fora de `listItems`, mas contando em agregações).
+  // Obs.: o bloqueio é determinístico (unique exata ou EAN); um item ignorado
+  // ainda pode ressurgir como item NOVO se vier com nome diferente e sem/outro EAN.
+  const existing = await tx.item.findUnique({
+    where: {
+      type_reference_code_name: {
+        type: input.type,
+        reference_code: referenceCode,
+        name,
+      },
+    },
+    select: { id: true, deleted_at: true, ignored_at: true },
+  });
+  if (existing) {
+    if (existing.ignored_at) {
+      return null;
+    }
+    if (existing.deleted_at) {
+      await tx.item.update({ where: { id: existing.id }, data: { deleted_at: null } });
+    }
+    return existing.id;
+  }
+
+  // Cria. O upsert com `update: {}` vazio só absorve a corrida de duas
+  // importações criando o mesmo item ao mesmo tempo (a linha concorrente é
+  // recém-criada e ativa → no-op correto, sem risco de des-esconder um item
+  // ignorado no meio do voo).
   const item = await tx.item.upsert({
     where: {
       type_reference_code_name: {
@@ -179,7 +214,7 @@ export async function findOrCreateItem(
       ean: ean ?? null,
       nbs_code: input.nbs_code ?? null,
     },
-    update: { deleted_at: null },
+    update: {},
   });
   return item.id;
 }
