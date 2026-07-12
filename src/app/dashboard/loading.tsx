@@ -1,5 +1,10 @@
-import { LoadingState } from '~/components/LoadingState';
+import { DashboardSkeleton } from '~/app/components/dashboard-skeleton';
+import Template from '~/components/Template';
 
 export default function Loading() {
-  return <LoadingState label="Carregando dashboard…" />;
+  return (
+    <Template>
+      <DashboardSkeleton />
+    </Template>
+  );
 }

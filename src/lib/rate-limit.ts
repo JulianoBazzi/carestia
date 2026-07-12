@@ -1,5 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
+import { isAdmin } from '~/lib/auth/admin';
 
 /**
  * Rate limit simples de janela fixa, EM MEMÓRIA (por processo). Cobre bem uma
@@ -55,14 +56,17 @@ export function checkRateLimit(
 /**
  * Aplica rate limit por IP+escopo. Retorna uma resposta 429 pronta se estourar,
  * ou `null` para seguir. Inclui `error` e `message` no corpo porque as rotas leem
- * campos diferentes.
+ * campos diferentes. Admins são isentos: passe a sessão (quando existir) e a
+ * checagem é pulada sem consumir a cota do IP.
  */
 export function enforceRateLimit(
   req: Request,
   scope: string,
   limit: number,
   windowMs: number,
+  session?: { type?: string | null } | null,
 ): NextResponse | null {
+  if (isAdmin(session)) return null;
   const { ok, retryAfter } = checkRateLimit(`${scope}:${clientIp(req)}`, limit, windowMs);
   if (ok) return null;
   const msg = 'Muitas requisições. Aguarde um momento e tente novamente.';

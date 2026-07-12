@@ -154,7 +154,7 @@ function entryIcon(status: EntryStatus) {
     case 'duplicated':
       return { as: LuCopy, color: 'fg.muted' };
     case 'error':
-      return { as: LuCircleX, color: 'red.500' };
+      return { as: LuCircleX, color: 'fg.error' };
     default:
       return { as: LuFileText, color: 'fg.muted' };
   }
@@ -178,6 +178,10 @@ export function InvoiceImport() {
   const [dragging, setDragging] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [running, setRunning] = useState(false);
+  const busy = running || preparing;
+  // Espelho síncrono de `busy`: os handlers leem esta ref para bloquear cliques/drops
+  // no intervalo entre o setState e o re-render.
+  const busyRef = useRef(false);
 
   const stats = useMemo(() => {
     const done = entries.filter((e) => e.status !== 'queued' && e.status !== 'processing').length;
@@ -219,23 +223,28 @@ export function InvoiceImport() {
 
   async function processFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList);
-    if (files.length === 0) return;
+    if (files.length === 0 || busyRef.current) return;
 
+    busyRef.current = true;
     setRunning(true);
     setPreparing(true);
     setEntries([]);
-    const expanded = await expandToEntries(files);
-    setEntries(expanded);
-    setPreparing(false);
+    try {
+      const expanded = await expandToEntries(files);
+      setEntries(expanded);
+      setPreparing(false);
 
-    // Entradas já marcadas como erro (zip ilegível / sem XML) não vão ao servidor.
-    await runPool(
-      expanded.filter((e) => e.status === 'queued'),
-      importEntry,
-      CONCURRENCY,
-    );
-
-    setRunning(false);
+      // Entradas já marcadas como erro (zip ilegível / sem XML) não vão ao servidor.
+      await runPool(
+        expanded.filter((e) => e.status === 'queued'),
+        importEntry,
+        CONCURRENCY,
+      );
+    } finally {
+      busyRef.current = false;
+      setPreparing(false);
+      setRunning(false);
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [TABLE_INVOICES] }),
       queryClient.invalidateQueries({ queryKey: [TABLE_DASHBOARD_METRICS] }),
@@ -261,18 +270,23 @@ export function InvoiceImport() {
         borderColor={dragging ? 'teal.500' : 'border'}
         bg={dragging ? 'teal.50' : 'bg.surface'}
         _dark={{ bg: dragging ? 'teal.950' : 'bg.surface' }}
-        cursor="pointer"
+        cursor={busy ? 'not-allowed' : 'pointer'}
+        opacity={busy ? 0.6 : 1}
         transition="all 0.15s"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          if (!busy && !busyRef.current) inputRef.current?.click();
+        }}
         onDragOver={(e) => {
           e.preventDefault();
-          setDragging(true);
+          if (!busy && !busyRef.current) setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          if (e.dataTransfer.files?.length) processFiles(e.dataTransfer.files);
+          if (!busy && !busyRef.current && e.dataTransfer.files?.length) {
+            processFiles(e.dataTransfer.files);
+          }
         }}
       >
         <Card.Body>
@@ -282,21 +296,24 @@ export function InvoiceImport() {
             </Circle>
             <Stack gap="1">
               <Text fontWeight="semibold" fontSize="lg">
-                Arraste seus arquivos aqui
+                {busy ? 'Importação em andamento…' : 'Arraste seus arquivos aqui'}
               </Text>
               <Text fontSize="sm" color="fg.muted">
-                ou clique para selecionar do seu computador
+                {busy
+                  ? 'Aguarde terminar para enviar novos arquivos.'
+                  : 'ou clique para selecionar do seu computador'}
               </Text>
             </Stack>
             <PrimaryButton
               size="sm"
               loading={running}
+              disabled={busy}
               onClick={(e) => {
                 e.stopPropagation();
-                inputRef.current?.click();
+                if (!busy && !busyRef.current) inputRef.current?.click();
               }}
             >
-              <LuCloudUpload /> Selecionar arquivos
+              <LuCloudUpload /> {busy ? 'Importando…' : 'Selecionar arquivos'}
             </PrimaryButton>
             <Text fontSize="xs" color="fg.muted">
               Formatos aceitos: XML e ZIP — vários arquivos de uma vez.
@@ -308,6 +325,7 @@ export function InvoiceImport() {
             accept=".xml,.zip,text/xml,application/xml,application/zip"
             multiple
             hidden
+            disabled={busy}
             onChange={(e) => {
               if (e.target.files?.length) processFiles(e.target.files);
               e.target.value = '';
@@ -320,7 +338,7 @@ export function InvoiceImport() {
         <Card.Root bg="bg.surface">
           <Card.Body>
             <HStack gap="3">
-              <Spinner size="sm" color="blue.500" />
+              <Spinner size="sm" color="blue.500" _dark={{ color: 'blue.400' }} />
               <Text fontSize="sm" color="fg.muted">
                 Preparando arquivos…
               </Text>
@@ -366,7 +384,12 @@ export function InvoiceImport() {
                     >
                       <HStack gap="2.5" minW="0">
                         {entry.status === 'processing' ? (
-                          <Spinner size="sm" color="blue.500" flexShrink={0} />
+                          <Spinner
+                            size="sm"
+                            color="blue.500"
+                            _dark={{ color: 'blue.400' }}
+                            flexShrink={0}
+                          />
                         ) : (
                           <Icon as={icon.as} color={icon.color} flexShrink={0} />
                         )}
@@ -376,7 +399,7 @@ export function InvoiceImport() {
                           </Text>
                           {entry.message &&
                             (entry.status === 'error' ? (
-                              <Text fontSize="xs" color="red.500">
+                              <Text fontSize="xs" color="fg.error">
                                 {entry.message}
                               </Text>
                             ) : (

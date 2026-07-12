@@ -17,7 +17,7 @@ function isAdminPath(pathname: string): boolean {
   return ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   if (isPublic(req.nextUrl.pathname)) {
     return NextResponse.next();
   }
@@ -42,7 +42,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Roda em tudo, exceto auth APIs, assets e arquivos do PWA. As rotas públicas
-  // são liberadas dentro do middleware (acima).
+  // são liberadas dentro do proxy (acima).
   matcher: [
     '/((?!api/auth|_next/static|_next/image|manifest.json|sw.js|workbox-|icons|favicon.ico).*)',
   ],

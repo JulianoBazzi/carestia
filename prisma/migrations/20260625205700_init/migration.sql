@@ -1,11 +1,17 @@
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
+-- CreateExtension
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
 -- CreateEnum
 CREATE TYPE "item_type" AS ENUM ('product', 'service', 'energy');
 
 -- CreateEnum
 CREATE TYPE "invoice_model" AS ENUM ('nfe', 'nfce', 'nfse', 'nf3e');
+
+-- CreateEnum
+CREATE TYPE "user_type" AS ENUM ('user', 'admin');
 
 -- CreateTable
 CREATE TABLE "categories" (
@@ -48,11 +54,13 @@ CREATE TABLE "items" (
     "reference_code" VARCHAR(20) NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "unit" VARCHAR(10),
+    "ean" VARCHAR(14),
     "nbs_code" VARCHAR(20),
     "category_id" VARCHAR(26),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
     "deleted_at" TIMESTAMPTZ,
+    "ignored_at" TIMESTAMPTZ,
 
     CONSTRAINT "items_pkey" PRIMARY KEY ("id")
 );
@@ -63,6 +71,7 @@ CREATE TABLE "users" (
     "name" VARCHAR(255) NOT NULL,
     "email" VARCHAR(255) NOT NULL,
     "password" VARCHAR(255) NOT NULL,
+    "type" "user_type" NOT NULL DEFAULT 'user',
     "active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
@@ -122,6 +131,12 @@ CREATE INDEX "items_category_id_idx" ON "items"("category_id");
 
 -- CreateIndex
 CREATE INDEX "items_deleted_at_idx" ON "items"("deleted_at");
+
+-- CreateIndex
+CREATE INDEX "items_ean_idx" ON "items"("ean");
+
+-- CreateIndex
+CREATE INDEX "items_name_idx" ON "items" USING GIN ("name" gin_trgm_ops);
 
 -- CreateIndex
 CREATE UNIQUE INDEX "items_type_reference_code_name_key" ON "items"("type", "reference_code", "name");

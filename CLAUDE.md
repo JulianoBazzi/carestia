@@ -31,7 +31,7 @@ Gerenciador de pacotes é **pnpm** (não use npm/yarn). `postinstall` roda `pris
 - **IDs:** ULID (`VarChar(26)`), gerados em `~/lib/id.ts`.
 - **Soft delete:** entidades usam `deleted_at`; filtre registros removidos nas queries.
 - **Validação:** schemas Zod em `src/schemas/`.
-- **Prisma:** client gerado em `src/generated/prisma` (fora do lint/tsconfig). Usa driver adapter `@prisma/adapter-pg` com `DATABASE_URL`. Não existe pasta `prisma/migrations/` — o fluxo é `db push`.
+- **Prisma:** client gerado em `src/generated/prisma` (fora do lint/tsconfig). Usa driver adapter `@prisma/adapter-pg` com `DATABASE_URL`. O fluxo diário é `db push`; existe uma migration inicial em `prisma/migrations/` (baseline) — ao alterar o schema, mantenha-a em sincronia (regenere via `prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script` ou crie uma migration nova).
 
 ## Arquitetura (`src/`)
 
@@ -45,7 +45,7 @@ Gerenciador de pacotes é **pnpm** (não use npm/yarn). `postinstall` roda `pris
 
 JWT via **`jose`** (HS256, expira em 7d), assinado com `AUTH_SECRET`, guardado em cookie httpOnly **`mi_token`**. Senhas com **bcryptjs** (10 rounds). Helpers em `src/lib/auth/`. Use `getSession()` (`current-user.ts`) em rotas protegidas (retorna `{ sub, name, email }` ou `null`).
 
-**Papel de usuário:** coluna `users.type` (`admin` | `user`, default `user`; o admin é definido pelo `prisma/seed.ts`). O papel viaja no JWT (`session.type`) — checagem via `isAdmin(session)` (`src/lib/auth/admin.ts`, módulo puro reexportado por `current-user.ts`, sem tocar o banco; funciona no middleware). Trocar o papel exige novo login. **Recursos só-admin:** "Importar por chave" (Infosimples), "Categorizar com IA" (OpenAI) e **excluir/mesclar** o catálogo global (empresas, categorias, itens) — a UI é escondida e as rotas de API retornam 403 (criar/editar seguem liberados a qualquer usuário logado).
+**Papel de usuário:** coluna `users.type` (`admin` | `user`, default `user`; o admin é definido pelo `prisma/seed.ts`). O papel viaja no JWT (`session.type`) — checagem via `isAdmin(session)` (`src/lib/auth/admin.ts`, módulo puro reexportado por `current-user.ts`, sem tocar o banco; funciona no proxy). Trocar o papel exige novo login. **Recursos só-admin:** "Importar por chave" (Infosimples), "Categorizar com IA" (OpenAI) e **excluir/mesclar** o catálogo global (empresas, categorias, itens) — a UI é escondida e as rotas de API retornam 403 (criar/editar seguem liberados a qualquer usuário logado).
 
 ## Integrações externas
 

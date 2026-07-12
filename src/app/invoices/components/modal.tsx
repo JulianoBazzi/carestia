@@ -398,22 +398,6 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
               </SimpleGrid>
             </Stack>
 
-            <HStack
-              gap="2.5"
-              align="start"
-              bg="teal.50"
-              _dark={{ bg: 'teal.950' }}
-              p="3"
-              borderRadius="lg"
-            >
-              <Icon as={LuShieldCheck} color="teal.600" boxSize={5} mt="0.5" flexShrink={0} />
-              <Text fontSize="xs" color="fg.muted">
-                {isEnergy
-                  ? 'Privacidade: descartamos rua, número, CEP, unidade consumidora, medidor, titular (CPF/nome) e o consumo em kWh — guardamos só a distribuidora, o preço por kWh e bairro/cidade/UF.'
-                  : 'Privacidade: dados pessoais do consumidor (CPF, nome, endereço) são descartados. Guardamos só o emitente, o valor unitário de cada item e o bairro/cidade/UF.'}
-              </Text>
-            </HStack>
-
             <Stack gap="2">
               <Flex justify="space-between" align="center">
                 <Text fontWeight="semibold" fontSize="sm">
@@ -448,7 +432,11 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                             label={index === 0 ? 'NCM' : undefined}
                             disabled={busy}
                             value={it.reference_code}
-                            onChange={(e) => updateItem(index, { reference_code: e.target.value })}
+                            onChange={(e) =>
+                              updateItem(index, {
+                                reference_code: e.target.value,
+                              })
+                            }
                           />
                         </Box>
                       )}
@@ -484,6 +472,22 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                 </Stack>
               )}
             </Stack>
+            <HStack
+              mb="-4"
+              gap="2.5"
+              align="center"
+              bg="teal.50"
+              _dark={{ bg: 'teal.950' }}
+              p="2"
+              borderRadius="lg"
+            >
+              <Icon as={LuShieldCheck} color="teal.600" boxSize={5} mt="0.5" flexShrink={0} />
+              <Text fontSize="xs" color="fg.muted">
+                {isEnergy
+                  ? 'Privacidade: descartamos rua, número, CEP, unidade consumidora, medidor, titular e o consumo em kWh — guardamos só a distribuidora, o preço por kWh e bairro/cidade/UF.'
+                  : 'Privacidade: dados pessoais do consumidor (CPF, nome, endereço) são descartados. Guardamos só o emitente, o valor unitário de cada item e o bairro/cidade/UF.'}
+              </Text>
+            </HStack>
           </Stack>
         )}
       </Dialog.Body>

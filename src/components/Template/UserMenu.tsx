@@ -3,7 +3,8 @@
 import { Circle, Menu, Portal, Text } from '@chakra-ui/react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { LuLogOut, LuUser } from 'react-icons/lu';
+import { LuLogOut, LuMoon, LuSun, LuUser } from 'react-icons/lu';
+import { useColorMode } from '~/components/ui/color-mode';
 
 function initials(name: string, email: string): string {
   const source = name.trim() || email.trim();
@@ -17,7 +18,9 @@ function initials(name: string, email: string): string {
 
 export function UserMenu({ name, email }: { name: string; email: string }) {
   const router = useRouter();
+  const { colorMode, toggleColorMode } = useColorMode();
   const [loading, setLoading] = useState(false);
+  const isDark = colorMode === 'dark';
 
   async function onLogout() {
     setLoading(true);
@@ -62,6 +65,10 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
             <Menu.Item value="account" onClick={() => router.push('/account')}>
               <LuUser />
               Minha conta
+            </Menu.Item>
+            <Menu.Item value="theme" closeOnSelect={false} onClick={toggleColorMode}>
+              {isDark ? <LuSun /> : <LuMoon />}
+              {isDark ? 'Tema claro' : 'Tema escuro'}
             </Menu.Item>
             <Menu.Item value="logout" color="fg.error" onClick={onLogout}>
               <LuLogOut />

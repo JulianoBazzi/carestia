@@ -156,7 +156,7 @@ export function TableWithService<T extends IEntityBase, P extends IParamsRequest
                           ) : sorted === 'desc' ? (
                             <Icon as={RiArrowDownSFill} />
                           ) : (
-                            <Icon as={RiSubtractLine} color="gray.300" />
+                            <Icon as={RiSubtractLine} color="fg.subtle" />
                           ))}
                       </Flex>
                     </Table.ColumnHeader>

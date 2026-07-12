@@ -26,8 +26,9 @@ export async function POST(req: Request) {
   if (!isAdmin(session)) {
     return NextResponse.json({ message: 'Acesso negado.' }, { status: StatusCodes.FORBIDDEN });
   }
-  // Controle de custo (tokens pagos): 20 requisições por hora.
-  const limited = enforceRateLimit(req, 'categorize', 20, 60 * 60 * 1000);
+  // Rota só-admin e admin é isento do rate limit — a trava fica como salvaguarda
+  // caso o acesso deixe de ser restrito a admins.
+  const limited = enforceRateLimit(req, 'categorize', 20, 60 * 60 * 1000, session);
   if (limited) return limited;
 
   if (!isAiEnabled()) {

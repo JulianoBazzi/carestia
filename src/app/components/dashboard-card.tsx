@@ -1,16 +1,14 @@
 'use client';
 
 import { Card, Flex, Heading, SegmentGroup, Stack, Table, Text } from '@chakra-ui/react';
-import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { LuListChecks, LuPercent, LuScale, LuUpload } from 'react-icons/lu';
+import { LuListChecks, LuPercent, LuScale } from 'react-icons/lu';
+import { DashboardHeader, DashboardSkeleton } from '~/app/components/dashboard-skeleton';
 import { AdSlot } from '~/components/Ad/AdSlot';
 import { StatusBadge } from '~/components/Badge/StatusBadge';
-import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { InflationCompareChart } from '~/components/charts/InflationCompareChart';
 import { EmptyState } from '~/components/EmptyState';
-import { LoadingState } from '~/components/LoadingState';
 import { StatCard } from '~/components/StatCard';
 import { formatPct, formatPp, formatPrice } from '~/lib/format';
 import { useInflation } from '~/services/hooks/useInflation';
@@ -46,7 +44,7 @@ export function DashboardCard() {
   }, [data, typeFilter]);
 
   if (isLoading || !data) {
-    return <LoadingState label="Calculando sua inflação…" />;
+    return <DashboardSkeleton />;
   }
 
   const { comparison, series, items, byCategory, ipcaAvailable } = data;
@@ -54,21 +52,7 @@ export function DashboardCard() {
 
   return (
     <Stack gap="6">
-      <Flex justify="space-between" align="center" gap="4" wrap="wrap">
-        <Stack gap="0.5">
-          <Heading size="lg" fontFamily="heading">
-            Dashboard
-          </Heading>
-          <Text fontSize="sm" color="fg.muted">
-            Sua inflação real comparada ao IPCA oficial.
-          </Text>
-        </Stack>
-        <PrimaryButton size="sm" asChild>
-          <NextLink href="/invoices/import">
-            <LuUpload /> Importar XML
-          </NextLink>
-        </PrimaryButton>
-      </Flex>
+      <DashboardHeader />
 
       <AdSlot variant="banner" />
 
