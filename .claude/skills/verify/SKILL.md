@@ -1,4 +1,4 @@
-# Verify — Minha Inflação
+# Verify — Carestia
 
 Receita para verificar mudanças de runtime dirigindo o app de verdade (Next.js + Chakra).
 

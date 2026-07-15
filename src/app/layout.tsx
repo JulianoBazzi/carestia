@@ -16,17 +16,31 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  applicationName: 'Minha Inflação',
+  metadataBase: new URL('https://carestia.com.br'),
+  applicationName: 'Carestia',
   title: {
-    default: 'Minha Inflação',
-    template: '%s · Minha Inflação',
+    default: 'Carestia',
+    template: '%s · Carestia',
   },
   description: 'Acompanhe a inflação do seu próprio bolso.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Minha Inflação',
+    title: 'Carestia',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'pt_BR',
+    url: 'https://carestia.com.br',
+    siteName: 'Carestia',
+    title: 'Carestia',
+    description: 'Acompanhe a inflação do seu próprio bolso.',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Carestia',
+    description: 'Acompanhe a inflação do seu próprio bolso.',
   },
 };
 

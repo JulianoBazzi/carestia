@@ -1,6 +1,6 @@
-# Minha Inflação
+# Carestia
 
-Acompanhe a inflação do seu próprio bolso. **Minha Inflação** é um app que calcula o seu índice de preços pessoal a partir das suas notas fiscais eletrônicas e o compara com o **IPCA** oficial — de forma anônima e privada.
+Acompanhe a inflação do seu próprio bolso. A **Carestia** é um app que calcula o seu índice de preços pessoal a partir das suas notas fiscais eletrônicas e o compara com o **IPCA** oficial — de forma anônima e privada.
 
 Em vez de depender apenas de médias nacionais, você descobre quanto os preços que **você realmente paga** (do supermercado à conta de luz) subiram ao longo do tempo.
 
@@ -62,7 +62,6 @@ pnpm dev         # http://localhost:3000
 | `AUTH_SECRET` | Segredo aleatório de **pelo menos 32 caracteres** para assinar o JWT |
 | `INFOSIMPLES_TOKEN` | Opcional. Habilita a importação de notas por chave de acesso (somente admin) |
 | `OPENAI_API_KEY` | Opcional. Habilita a categorização de itens por IA (somente admin) |
-| `NEXT_PUBLIC_APP_NAME` | Nome exibido do app |
 | `NEXT_PUBLIC_API_URL` | URL base da API (ex.: `http://localhost:3000/api`) |
 
 ## Scripts

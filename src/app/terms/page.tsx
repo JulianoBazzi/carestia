@@ -7,9 +7,9 @@ export default function TermosPage() {
   return (
     <LegalLayout title="Termos de Uso" updatedAt="29/06/2026">
       <LegalSection title="1. Objeto">
-        O Minha Inflação é um serviço gratuito que permite ao usuário importar suas notas fiscais
-        (NF-e, NFC-e, NFS-e e contas de energia/NF3e) para acompanhar a evolução dos preços que paga
-        e compará-la ao IPCA oficial.
+        A Carestia é um serviço gratuito que permite ao usuário importar suas notas fiscais (NF-e,
+        NFC-e, NFS-e e contas de energia/NF3e) para acompanhar a evolução dos preços que paga e
+        compará-la ao IPCA oficial.
       </LegalSection>
       <LegalSection title="2. Cadastro">
         O acesso às funcionalidades pessoais exige cadastro com e-mail e senha. Você é responsável

@@ -20,8 +20,7 @@ export async function POST(req: Request) {
   if (!REGISTRATION_OPEN) {
     return NextResponse.json(
       {
-        message:
-          'O Minha Inflação está em beta fechado e não está aceitando novos cadastros no momento.',
+        message: 'A Carestia está em beta fechado e não está aceitando novos cadastros no momento.',
       },
       { status: StatusCodes.FORBIDDEN },
     );

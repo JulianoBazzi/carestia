@@ -23,7 +23,7 @@ function Brand() {
         <LuTrendingUp size={20} />
       </Circle>
       <Heading size="md" color="white" fontFamily="heading">
-        Minha Inflação
+        Carestia
       </Heading>
     </HStack>
   );
@@ -72,7 +72,7 @@ export function AuthShell({
           </Stack>
         </Stack>
         <Text fontSize="xs" color="whiteAlpha.500">
-          © Minha Inflação
+          © Carestia
         </Text>
       </Stack>
 
@@ -99,7 +99,7 @@ export function AuthShell({
                   <LuTrendingUp size={18} />
                 </Circle>
                 <Heading size="sm" fontFamily="heading">
-                  Minha Inflação
+                  Carestia
                 </Heading>
               </HStack>
               <Heading size="xl" fontFamily="heading">

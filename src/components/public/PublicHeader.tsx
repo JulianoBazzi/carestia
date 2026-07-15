@@ -29,7 +29,7 @@ export function PublicHeader() {
                 <LuTrendingUp size={18} />
               </Circle>
               <Heading size="md" fontFamily="heading">
-                Minha Inflação
+                Carestia
               </Heading>
             </HStack>
           </NextLink>

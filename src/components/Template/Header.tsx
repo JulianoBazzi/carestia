@@ -76,7 +76,7 @@ export function Header({ user }: { user: { name: string; email: string } }) {
                   <LuTrendingUp size={18} />
                 </Circle>
                 <Heading size="md" fontFamily="heading">
-                  Minha Inflação
+                  Carestia
                 </Heading>
               </HStack>
             </NextLink>

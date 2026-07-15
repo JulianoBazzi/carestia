@@ -1,7 +1,7 @@
 {
-  "name": "minha-inflacao",
+  "name": "carestia",
   "version": "1.0.0",
-  "description": "Minha Inflação — acompanhe a inflação do seu próprio bolso.",
+  "description": "Carestia — acompanhe a inflação do seu próprio bolso.",
   "author": "Juliano Bazzi",
   "license": "ISC",
   "type": "module",

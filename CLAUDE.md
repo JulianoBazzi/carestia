@@ -4,7 +4,7 @@ Guia para agentes que trabalham neste repositório. Mantenha as convenções aba
 
 ## O que é
 
-**Minha Inflação** — app Next.js que permite ao usuário acompanhar a **própria inflação** importando notas fiscais eletrônicas (NF-e/NFC-e/NFS-e/NF3e) e comparando o índice pessoal com o **IPCA** oficial (BCB SGS série 433).
+**Carestia** — app Next.js (domínio: carestia.com.br) que permite ao usuário acompanhar a **própria inflação** importando notas fiscais eletrônicas (NF-e/NFC-e/NFS-e/NF3e) e comparando o índice pessoal com o **IPCA** oficial (BCB SGS série 433).
 
 **Privacidade em primeiro lugar:** o banco armazena apenas o **preço unitário** de cada item (R$/un, ou R$/kWh para energia). Nunca guarde quantidade, valor total, XML bruto ou dados do consumidor. A agregação pública (`public-prices.ts`) só expõe médias com `MIN_SAMPLES = 3`.
 
@@ -63,7 +63,7 @@ Copie `.env.example` para `.env.local`:
 - `AUTH_SECRET` — segredo aleatório de **≥32 caracteres** (assinatura JWT; a app recusa iniciar com segredo curto).
 - `INFOSIMPLES_TOKEN` — opcional; habilita importação por chave (só admin).
 - `OPENAI_API_KEY` — opcional; habilita categorização por IA (só admin).
-- `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_API_URL`.
+- `NEXT_PUBLIC_API_URL`.
 
 ## Testes
 
