@@ -1,6 +1,6 @@
 'use client';
 
-import { Dialog, Field, NativeSelect, SegmentGroup, Stack } from '@chakra-ui/react';
+import { Dialog, Field, SegmentGroup, Stack } from '@chakra-ui/react';
 import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ import { type Ref, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
+import { Select } from '~/components/Form/Select';
 import { Input } from '~/components/Input';
 import { API_URL_ITEMS, TABLE_ITEMS } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
@@ -44,6 +45,10 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
     sortedBy: OrderByTypeEnum.Asc,
   });
   const categories = categoriesQuery.data?.data ?? [];
+  const categoryOptions = useMemo(
+    () => categories.map((c) => ({ value: c.id, label: c.name })),
+    [categories],
+  );
 
   const mutation = useMutation({
     mutationFn: async (data: ItemData) => {
@@ -182,23 +187,18 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
 
           <form.Field name="category_id">
             {(field) => (
-              <Field.Root>
-                <Field.Label>Categoria</Field.Label>
-                <NativeSelect.Root disabled={isSubmitting}>
-                  <NativeSelect.Field
-                    value={field.state.value ?? ''}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                  >
-                    <option value="">Sem categoria</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </NativeSelect.Field>
-                  <NativeSelect.Indicator />
-                </NativeSelect.Root>
-              </Field.Root>
+              <Select
+                name={field.name}
+                label="Categoria"
+                placeholder="Sem categoria"
+                clearable
+                disabled={isSubmitting}
+                loading={categoriesQuery.isLoading}
+                options={categoryOptions}
+                value={field.state.value ?? ''}
+                onChange={(v) => field.handleChange(v ?? '')}
+                error={field.state.meta.errors[0]?.message}
+              />
             )}
           </form.Field>
 

@@ -15,24 +15,22 @@ const P2002 = 'P2002'; // unique constraint violation
 
 /** Mescla dados da empresa do XML com a BrasilAPI (preenche lacunas). */
 async function resolveCompany(dto: ICompanyDTO) {
-  const hasAddress = Boolean(dto.street && dto.zipcode);
+  // Privacy-first: só bairro/cidade/UF (índice regional) — sem rua/número/CEP.
+  const hasLocation = Boolean(dto.city && dto.state);
   let source = 'xml';
   let data = { ...dto };
 
-  if (!hasAddress) {
+  if (!hasLocation) {
     const api = await fetchCnpj(dto.document);
     if (api) {
-      source = dto.street ? 'xml' : 'brasilapi';
+      source = dto.city ? 'xml' : 'brasilapi';
       data = {
         ...data,
         socialName: data.socialName || api.razao_social,
         fantasyName: data.fantasyName || api.nome_fantasia || undefined,
-        street: data.street || api.logradouro || undefined,
-        number: data.number || api.numero || undefined,
         neighborhood: data.neighborhood || api.bairro || undefined,
         city: data.city || api.municipio || undefined,
         state: data.state || api.uf || undefined,
-        zipcode: data.zipcode || api.cep || undefined,
       };
     }
   }
@@ -41,8 +39,6 @@ async function resolveCompany(dto: ICompanyDTO) {
     ...data,
     socialName: normalizeName(data.socialName) ?? data.socialName,
     fantasyName: normalizeName(data.fantasyName),
-    street: normalizeName(data.street),
-    number: normalizeName(data.number),
     neighborhood: normalizeName(data.neighborhood),
     city: normalizeName(data.city),
     state: normalizeName(data.state),
@@ -82,96 +78,96 @@ export async function importInvoice(
 
   const { data: companyData, origin } = await resolveCompany(parsed.company);
 
+  // Empresa e itens são catálogo GLOBAL e ficam fora de transação de propósito:
+  // a resolução de itens faz várias queries por linha (EAN, similaridade, alias)
+  // e num banco remoto estourava o timeout da transação interativa (5s). Se a
+  // criação da nota falhar depois (ex.: duplicada), empresa/itens persistidos
+  // são entradas legítimas que o matching reutiliza — nada a desfazer.
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const company = await tx.company.upsert({
-        where: { document: companyData.document },
-        create: {
-          id: newId(),
-          document: companyData.document,
-          social_name: companyData.socialName,
-          fantasy_name: companyData.fantasyName,
-          street: companyData.street,
-          number: companyData.number,
-          neighborhood: companyData.neighborhood,
-          city: companyData.city,
-          state: companyData.state,
-          zipcode: companyData.zipcode,
-          ibge_code: companyData.ibgeCode,
-          origin,
-        },
-        update: {
-          social_name: companyData.socialName,
-          fantasy_name: companyData.fantasyName,
-        },
-      });
-
-      const lineItems = [];
-      let ignoredItems = 0;
-      for (const it of parsed.items) {
-        // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
-        const itemId = await findOrCreateItem(tx, {
-          type: it.type,
-          reference_code: it.referenceCode,
-          name: it.name,
-          unit: it.unit,
-          ean: it.ean,
-          nbs_code: it.nbsCode,
-          unitValue: Number(it.unitValue),
-        });
-        // Item ignorado pela administração: a linha é descartada (a nota ainda é
-        // criada, preservando o dedup por access_key).
-        if (itemId === null) {
-          ignoredItems += 1;
-          continue;
-        }
-        lineItems.push({
-          id: newId(),
-          item_id: itemId,
-          description: normalizeName(it.description) ?? it.description,
-          unit: normalizeUnit(it.unit),
-          // Privacy-first: só o preço unitário (R$), sem quantidade nem total.
-          unit_value: Number(it.unitValue),
-        });
-      }
-
-      // Local da compra/consumo (anonimizado) para o índice regional.
-      // Energia: o parser informa o local de consumo (acessante); demais: usa o emitente.
-      const location = parsed.invoice.location ?? {
+    const company = await prisma.company.upsert({
+      where: { document: companyData.document },
+      create: {
+        id: newId(),
+        document: companyData.document,
+        social_name: companyData.socialName,
+        fantasy_name: companyData.fantasyName,
         neighborhood: companyData.neighborhood,
         city: companyData.city,
         state: companyData.state,
-        ibgeCode: companyData.ibgeCode,
-      };
+        ibge_code: companyData.ibgeCode,
+        origin,
+      },
+      update: {
+        social_name: companyData.socialName,
+        fantasy_name: companyData.fantasyName,
+      },
+    });
 
-      const created = await tx.invoice.create({
-        data: {
-          id: newId(),
-          user_id: userId,
-          company_id: company.id,
-          model: parsed.invoice.model,
-          number: normalizeName(parsed.invoice.number) ?? parsed.invoice.number,
-          series: normalizeName(parsed.invoice.series) ?? null,
-          access_key: parsed.invoice.accessKey,
-          issued_at: new Date(parsed.invoice.issuedAt),
-          // Privacy-first: sem total da nota nem XML cru.
-          neighborhood: normalizeName(location.neighborhood) ?? null,
-          city: normalizeName(location.city) ?? null,
-          state: normalizeName(location.state) ?? null,
-          ibge_code: location.ibgeCode ?? null,
-          items: { create: lineItems },
-        },
+    const lineItems = [];
+    let ignoredItems = 0;
+    for (const it of parsed.items) {
+      // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
+      const itemId = await findOrCreateItem(prisma, {
+        type: it.type,
+        reference_code: it.referenceCode,
+        name: it.name,
+        unit: it.unit,
+        ean: it.ean,
+        nbs_code: it.nbsCode,
+        unitValue: Number(it.unitValue),
       });
+      // Item ignorado pela administração: a linha é descartada (a nota ainda é
+      // criada, preservando o dedup por access_key).
+      if (itemId === null) {
+        ignoredItems += 1;
+        continue;
+      }
+      lineItems.push({
+        id: newId(),
+        item_id: itemId,
+        description: normalizeName(it.description) ?? it.description,
+        unit: normalizeUnit(it.unit),
+        // Privacy-first: só o preço unitário (R$), sem quantidade nem total.
+        unit_value: Number(it.unitValue),
+      });
+    }
 
-      return { invoiceId: created.id, ignoredItems };
+    // Local da compra/consumo (anonimizado) para o índice regional.
+    // Energia: o parser informa o local de consumo (acessante); demais: usa o emitente.
+    const location = parsed.invoice.location ?? {
+      neighborhood: companyData.neighborhood,
+      city: companyData.city,
+      state: companyData.state,
+      ibgeCode: companyData.ibgeCode,
+    };
+
+    // Nota + itens num único create aninhado: atômico por si só, sem
+    // transação interativa segurando conexão durante o trabalho acima.
+    const created = await prisma.invoice.create({
+      data: {
+        id: newId(),
+        user_id: userId,
+        company_id: company.id,
+        model: parsed.invoice.model,
+        number: normalizeName(parsed.invoice.number) ?? parsed.invoice.number,
+        series: normalizeName(parsed.invoice.series) ?? null,
+        access_key: parsed.invoice.accessKey,
+        issued_at: new Date(parsed.invoice.issuedAt),
+        // Privacy-first: sem total da nota nem XML cru.
+        neighborhood: normalizeName(location.neighborhood) ?? null,
+        city: normalizeName(location.city) ?? null,
+        state: normalizeName(location.state) ?? null,
+        ibge_code: location.ibgeCode ?? null,
+        items: { create: lineItems },
+      },
     });
 
     return {
       status: 'imported',
-      invoiceId: result.invoiceId,
+      invoiceId: created.id,
       accessKey: parsed.invoice.accessKey,
       // Só informa quando houve linha bloqueada (mantém o payload enxuto).
-      ...(result.ignoredItems > 0 && { ignoredItems: result.ignoredItems }),
+      ...(ignoredItems > 0 && { ignoredItems }),
     };
   } catch (e) {
     if (

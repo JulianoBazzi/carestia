@@ -56,12 +56,10 @@ model Company {
   document     String    @unique @db.VarChar(14) // CNPJ
   social_name  String    @db.VarChar(255)
   fantasy_name String?   @db.VarChar(255)
-  street       String?   @db.VarChar(255)
-  number       String?   @db.VarChar(20)
+  // Só o suficiente para o índice regional — sem rua/número/CEP.
   neighborhood String?   @db.VarChar(255)
   city         String?   @db.VarChar(255)
   state        String?   @db.VarChar(2)
-  zipcode      String?   @db.VarChar(8)
   ibge_code    String?   @db.VarChar(7)
   origin       String    @db.VarChar(20) // "xml" | "brasilapi"
   created_at   DateTime  @default(now()) @db.Timestamptz
@@ -90,6 +88,7 @@ model Item {
 
   category      Category?     @relation(fields: [category_id], references: [id])
   invoice_items InvoiceItem[]
+  aliases       ItemAlias[]
 
   @@unique([type, reference_code, name])
   @@index([category_id])
@@ -98,6 +97,27 @@ model Item {
   // Acelera a busca por similaridade (pg_trgm) na deduplicação de itens na importação.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("items")
+}
+
+// Nomes alternativos de um item, gravados pela mesclagem: a identidade do item
+// de origem (mesma chave da unique de items) passa a apontar para o item
+// principal, para a importação cair nele em vez de recriar/reativar a duplicata.
+// Registro auxiliar: sem soft delete.
+model ItemAlias {
+  id             String   @id @db.VarChar(26)
+  item_id        String   @db.VarChar(26)
+  type           ItemType
+  reference_code String   @db.VarChar(20) // NCM (product) | cTribNac (service)
+  name           String   @db.VarChar(255)
+  created_at     DateTime @default(now()) @db.Timestamptz
+
+  item Item @relation(fields: [item_id], references: [id])
+
+  @@unique([type, reference_code, name])
+  @@index([item_id])
+  // Permite o matching por similaridade (pg_trgm) também sobre os nomes alternativos.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("item_aliases")
 }
 
 // Tabelas por usuário
@@ -155,9 +175,10 @@ model InvoiceItem {
   item_id     String   @db.VarChar(26)
   description String   @db.VarChar(255)
   unit        String?  @db.VarChar(10)
-  // Preço unitário em reais (R$/un para produtos/serviços, R$/kWh para energia).
+  // Preço unitário em reais (R$/un para produtos/serviços, R$/kWh para energia),
+  // com no máximo 2 casas decimais (o banco arredonda na gravação).
   // Privacy-first: guardamos só o preço unitário — não a quantidade nem o total.
-  unit_value  Decimal  @db.Decimal(14, 6)
+  unit_value  Decimal  @db.Decimal(14, 2)
   created_at  DateTime @default(now()) @db.Timestamptz
 
   invoice Invoice @relation(fields: [invoice_id], references: [id])

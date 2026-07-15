@@ -74,6 +74,31 @@ export function priceWithinBand(
 }
 
 /**
+ * Resolve um nome alternativo (gravado pela mesclagem — ver `mergeItems`) para o
+ * item principal. Retorna `null` quando NÃO há alias para a identidade (o fluxo
+ * normal continua) ou `{ id }` quando há: `id` do item principal, ou `id: null`
+ * se o principal está ignorado (a linha deve ser descartada). Principal apenas
+ * soft-deletado é restaurado — mesma semântica do restore da unique exata.
+ */
+async function resolveAlias(
+  tx: Prisma.TransactionClient,
+  type: IItemMatchInput['type'],
+  referenceCode: string,
+  name: string,
+): Promise<{ id: string | null } | null> {
+  const alias = await tx.itemAlias.findUnique({
+    where: { type_reference_code_name: { type, reference_code: referenceCode, name } },
+    select: { item: { select: { id: true, deleted_at: true, ignored_at: true } } },
+  });
+  if (!alias) return null;
+  if (alias.item.ignored_at) return { id: null };
+  if (alias.item.deleted_at) {
+    await tx.item.update({ where: { id: alias.item.id }, data: { deleted_at: null } });
+  }
+  return { id: alias.item.id };
+}
+
+/**
  * Encontra um `Item` global equivalente (mesmo tipo+código+unidade, nome parecido
  * e preço compatível) e o reaproveita; se nenhum passar nos dois portões, cria um
  * novo. Retorna o `id` do item, ou `null` quando a linha casa com um item
@@ -98,45 +123,74 @@ export async function findOrCreateItem(
   const unit = normalizeUnit(input.unit);
   const ean = validEan(input.ean);
 
-  // Atalho determinístico: mesmo código de barras = mesmo produto. Confiamos no
-  // EAN e reaproveitamos o item direto, sem passar por nome/preço.
+  // Atalho determinístico: mesmo código de barras = mesmo produto. Uma única
+  // query traz todos os itens com esse GTIN e a precedência é decidida em JS
+  // (menos round-trips — a importação roda fora de transação, mas cada query
+  // ainda custa uma ida ao banco remoto).
   if (ean) {
-    const hit = await tx.item.findFirst({
-      where: { type: input.type, ean, deleted_at: null },
-      select: { id: true },
+    const hits = await tx.item.findMany({
+      where: { type: input.type, ean },
+      select: {
+        id: true,
+        reference_code: true,
+        name: true,
+        deleted_at: true,
+        ignored_at: true,
+      },
     });
-    if (hit) {
-      return hit.id;
+    // Ativo: reaproveita direto, sem passar por nome/preço.
+    const active = hits.find((h) => !h.deleted_at);
+    if (active) {
+      return active.id;
     }
     // Mesmo GTIN de um item IGNORADO: a linha é bloqueada — recriar sob outro
-    // nome burlaria o bloqueio permanente. Itens apenas soft-deletados (ex.:
-    // mesclados) não entram aqui e seguem o fluxo normal.
-    const ignored = await tx.item.findFirst({
-      where: { type: input.type, ean, ignored_at: { not: null } },
-      select: { id: true },
-    });
-    if (ignored) {
+    // nome burlaria o bloqueio permanente.
+    if (hits.some((h) => h.ignored_at)) {
       return null;
+    }
+    // GTIN que só existe num item MESCLADO legado (merges antigos deixavam o
+    // source soft-deletado; hoje o merge apaga a linha): segue pelo alias da
+    // identidade dele até o item principal, em vez de criar um duplicado novo.
+    const merged = hits.find((h) => h.deleted_at && !h.ignored_at);
+    if (merged) {
+      const aliased = await resolveAlias(tx, input.type, merged.reference_code, merged.name);
+      if (aliased) {
+        return aliased.id;
+      }
     }
   }
 
   // Top-N por similaridade (não só o 1º): o melhor por nome pode falhar no
-  // portão de preço enquanto um segundo candidato passa nos dois.
+  // portão de preço enquanto um segundo candidato passa nos dois. Os nomes
+  // alternativos (aliases de mesclagem) entram como candidatos do item
+  // principal: uma variação nova pode parecer mais com o alias do que com o
+  // nome atual do item.
   const rows = await tx.$queryRaw<
     { id: string; name: string; sim: number; median_price: number | null; ean: string | null }[]
   >`
-    SELECT i.id,
-           i.name,
-           i.ean,
-           word_similarity(${key}::text, regexp_replace(i.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
+    WITH candidates AS (
+      SELECT i.id, i.name, i.ean, i.unit
+      FROM items i
+      WHERE i.type = ${input.type}::item_type
+        AND i.reference_code = ${referenceCode}
+        AND i.deleted_at IS NULL
+      UNION ALL
+      SELECT i.id, a.name, i.ean, i.unit
+      FROM item_aliases a
+      JOIN items i ON i.id = a.item_id
+      WHERE a.type = ${input.type}::item_type
+        AND a.reference_code = ${referenceCode}
+        AND i.deleted_at IS NULL
+    )
+    SELECT c.id,
+           c.name,
+           c.ean,
+           word_similarity(${key}::text, regexp_replace(c.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY ii.unit_value) AS median_price
-    FROM items i
-    LEFT JOIN invoice_items ii ON ii.item_id = i.id
-    WHERE i.type = ${input.type}::item_type
-      AND i.reference_code = ${referenceCode}
-      AND i.deleted_at IS NULL
-      AND i.unit IS NOT DISTINCT FROM ${unit}::varchar
-    GROUP BY i.id, i.name
+    FROM candidates c
+    LEFT JOIN invoice_items ii ON ii.item_id = c.id
+    WHERE c.unit IS NOT DISTINCT FROM ${unit}::varchar
+    GROUP BY c.id, c.name, c.ean
     ORDER BY sim DESC
     LIMIT 5
   `;
@@ -164,15 +218,29 @@ export async function findOrCreateItem(
     return best.id;
   }
 
-  // Sem candidato parecido: olha a unique exata (type+code+name) ANTES de criar,
-  // enxergando também linhas soft-deletadas (a unique não filtra `deleted_at`):
+  // Nome alternativo exato (alias de mesclagem): a identidade do item mesclado
+  // aponta para o principal (o merge apaga a linha do source; o alias é o único
+  // registro da identidade). Roda ANTES da unique de items porque merges
+  // legados deixaram o source soft-deletado ocupando a mesma chave — sem o
+  // alias na frente, o restore abaixo ressuscitaria a duplicata mesclada.
+  const aliased = await resolveAlias(tx, input.type, referenceCode, name);
+  if (aliased) {
+    return aliased.id;
+  }
+
+  // Sem candidato parecido nem alias: olha a unique exata (type+code+name) ANTES
+  // de criar, enxergando também linhas soft-deletadas (a unique não filtra
+  // `deleted_at`):
   // - IGNORADO (`ignored_at`): bloqueio permanente — a linha é descartada e o
   //   item NUNCA é reativado.
-  // - Soft-deletado comum (ex.: mesclado): o produto voltou a ser comprado →
-  //   RESTAURA (`deleted_at: null`); sem isso os novos invoice_items ficariam
-  //   presos a um item "zumbi" (fora de `listItems`, mas contando em agregações).
-  // Obs.: o bloqueio é determinístico (unique exata ou EAN); um item ignorado
-  // ainda pode ressurgir como item NOVO se vier com nome diferente e sem/outro EAN.
+  // - Soft-deletado comum (dados legados/ocultos por outras vias): o produto
+  //   voltou a ser comprado → RESTAURA (`deleted_at: null`); sem isso os novos
+  //   invoice_items ficariam presos a um item "zumbi" (fora de `listItems`,
+  //   mas contando em agregações). Itens mesclados não chegam aqui: o alias
+  //   (mesma chave) intercepta antes — e merges novos nem deixam linha.
+  // Obs.: o bloqueio é determinístico (unique exata, alias ou EAN); um item
+  // ignorado ainda pode ressurgir como item NOVO se vier com nome diferente e
+  // sem/outro EAN.
   const existing = await tx.item.findUnique({
     where: {
       type_reference_code_name: {

@@ -3,7 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     invoiceItem: { updateMany: vi.fn() },
-    item: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
+    item: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+      create: vi.fn(),
+    },
+    itemAlias: { updateMany: vi.fn(), upsert: vi.fn() },
     company: { create: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -16,10 +24,20 @@ import { createItem, ignoreItem, mergeItems } from '~/services/management';
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.invoiceItem.updateMany.mockReturnValue('reassign-op');
-  prismaMock.item.findFirst.mockResolvedValue({ id: 'target-1' });
-  prismaMock.item.update.mockReturnValue('soft-delete-op');
+  prismaMock.item.findFirst.mockResolvedValue({ id: 'target-1', ean: null, nbs_code: null });
+  prismaMock.item.findUnique.mockResolvedValue({
+    type: 'product',
+    reference_code: '22071090',
+    name: 'ETANOL HIDRATADO',
+    ean: null,
+    nbs_code: null,
+  });
+  prismaMock.item.update.mockReturnValue('update-op');
   prismaMock.item.updateMany.mockResolvedValue({ count: 1 });
+  prismaMock.item.deleteMany.mockReturnValue('delete-op');
   prismaMock.item.create.mockResolvedValue({ id: 'item-1' });
+  prismaMock.itemAlias.updateMany.mockReturnValue('alias-move-op');
+  prismaMock.itemAlias.upsert.mockReturnValue('alias-upsert-op');
   prismaMock.$transaction.mockResolvedValue([]);
 });
 
@@ -84,18 +102,97 @@ describe('mergeItems', () => {
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
-  it('reaponta os invoice_items do source p/ o target e soft-deleta o source, em transação', async () => {
+  it('rejeita quando o item de origem não existe', async () => {
+    prismaMock.item.findUnique.mockResolvedValue(null);
+
+    await expect(mergeItems('source-x', 'target-1')).rejects.toThrow(
+      'Item de origem não encontrado.',
+    );
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('reaponta invoice_items, grava alias do source e o remove definitivamente, em transação', async () => {
     await mergeItems('source-1', 'target-1');
 
     expect(prismaMock.invoiceItem.updateMany).toHaveBeenCalledWith({
       where: { item_id: 'source-1' },
       data: { item_id: 'target-1' },
     });
-    expect(prismaMock.item.update).toHaveBeenCalledWith({
-      where: { id: 'source-1' },
-      data: { deleted_at: expect.any(Date) },
+    // A identidade do source vira alias do target (o merge mais recente vence
+    // se a chave já existir).
+    expect(prismaMock.itemAlias.upsert).toHaveBeenCalledWith({
+      where: {
+        type_reference_code_name: {
+          type: 'product',
+          reference_code: '22071090',
+          name: 'ETANOL HIDRATADO',
+        },
+      },
+      create: {
+        id: expect.any(String),
+        item_id: 'target-1',
+        type: 'product',
+        reference_code: '22071090',
+        name: 'ETANOL HIDRATADO',
+      },
+      update: { item_id: 'target-1' },
     });
-    // As duas operações vão juntas na mesma transação.
-    expect(prismaMock.$transaction).toHaveBeenCalledWith(['reassign-op', 'soft-delete-op']);
+    // Aliases que apontavam para o source migram para o target (cadeia achatada).
+    expect(prismaMock.itemAlias.updateMany).toHaveBeenCalledWith({
+      where: { item_id: 'source-1' },
+      data: { item_id: 'target-1' },
+    });
+    // DELETE físico do source (não soft delete): sem risco de reativação futura.
+    expect(prismaMock.item.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'source-1' },
+    });
+    expect(prismaMock.item.update).not.toHaveBeenCalled();
+    // Todas as operações vão juntas na mesma transação (sem backfill: source sem EAN/NBS).
+    expect(prismaMock.$transaction).toHaveBeenCalledWith([
+      'reassign-op',
+      'alias-move-op',
+      'alias-upsert-op',
+      'delete-op',
+    ]);
+  });
+
+  it('faz backfill de EAN/NBS no target quando só o source tem', async () => {
+    prismaMock.item.findUnique.mockResolvedValue({
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ETANOL HIDRATADO',
+      ean: '7891234567890',
+      nbs_code: 'NBS-1',
+    });
+
+    await mergeItems('source-1', 'target-1');
+
+    expect(prismaMock.item.updateMany).toHaveBeenCalledWith({
+      where: { id: 'target-1', ean: null },
+      data: { ean: '7891234567890' },
+    });
+    expect(prismaMock.item.updateMany).toHaveBeenCalledWith({
+      where: { id: 'target-1', nbs_code: null },
+      data: { nbs_code: 'NBS-1' },
+    });
+  });
+
+  it('NÃO faz backfill quando o target já tem EAN próprio', async () => {
+    prismaMock.item.findFirst.mockResolvedValue({
+      id: 'target-1',
+      ean: '7899999999999',
+      nbs_code: null,
+    });
+    prismaMock.item.findUnique.mockResolvedValue({
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ETANOL HIDRATADO',
+      ean: '7891234567890',
+      nbs_code: null,
+    });
+
+    await mergeItems('source-1', 'target-1');
+
+    expect(prismaMock.item.updateMany).not.toHaveBeenCalled();
   });
 });

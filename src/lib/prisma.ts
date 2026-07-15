@@ -9,7 +9,15 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
+const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter,
+    // Banco remoto: os 5s/2s padrão eram estourados por fluxos com várias
+    // queries (importação de notas). As transações do app são curtas hoje;
+    // isto é rede de segurança, não licença para transações longas.
+    transactionOptions: { maxWait: 10_000, timeout: 30_000 },
+  });
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;

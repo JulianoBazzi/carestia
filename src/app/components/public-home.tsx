@@ -8,7 +8,6 @@ import {
   Heading,
   HStack,
   Input,
-  NativeSelect,
   SimpleGrid,
   Skeleton,
   Stack,
@@ -20,6 +19,7 @@ import { useState } from 'react';
 import { LuChartLine, LuMapPin, LuSearch, LuZap } from 'react-icons/lu';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { EmptyState } from '~/components/EmptyState';
+import { Select } from '~/components/Form/Select';
 import { PublicHeader } from '~/components/public/PublicHeader';
 import { formatPrice } from '~/lib/format';
 import { api } from '~/services/apiClient';
@@ -127,17 +127,14 @@ export function PublicHome() {
                   <Text fontSize="xs" fontWeight="semibold" color="fg.muted" mb="1">
                     Estado
                   </Text>
-                  <NativeSelect.Root>
-                    <NativeSelect.Field value={state} onChange={(e) => setState(e.target.value)}>
-                      <option value="">Todos</option>
-                      {states.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </NativeSelect.Field>
-                    <NativeSelect.Indicator />
-                  </NativeSelect.Root>
+                  <Select
+                    name="public-state"
+                    clearable
+                    placeholder="Todos"
+                    options={states.map((s: string) => ({ value: s, label: s }))}
+                    value={state}
+                    onChange={(v) => setState(v ?? '')}
+                  />
                 </Box>
                 <Box flex="1" minW="40">
                   <Text fontSize="xs" fontWeight="semibold" color="fg.muted" mb="1">

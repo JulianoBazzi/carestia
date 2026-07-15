@@ -34,20 +34,24 @@ export interface IInvoiceWriteInput {
   items: IInvoiceItemInput[];
 }
 
-/** Upsert do Item global + retorno do invoice_item a criar (privacy-first: só preço unitário). */
-async function buildLineItems(
-  // biome-ignore lint/suspicious/noExplicitAny: client de transação do Prisma
-  tx: any,
-  invoiceId: string,
+/**
+ * Resolve os Itens globais e monta as rows de invoice_item (privacy-first: só
+ * preço unitário). Roda FORA de transação de propósito: o matching faz várias
+ * queries por linha (EAN, similaridade, alias) e estourava o timeout da
+ * transação interativa; itens criados são catálogo global — persistir mesmo
+ * que a nota falhe depois é inofensivo (o matching os reutiliza).
+ */
+async function resolveLineItems(
   itemType: 'product' | 'service' | 'energy',
   items: IInvoiceItemInput[],
 ) {
+  const rows = [];
   for (const it of items) {
     const name = normalizeName(it.description) ?? it.description;
     const unit = normalizeUnit(it.unit);
     // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
     // O findOrCreateItem normaliza name/reference_code/unit internamente.
-    const itemId = await findOrCreateItem(tx, {
+    const itemId = await findOrCreateItem(prisma, {
       type: itemType,
       reference_code: it.referenceCode,
       name: it.description,
@@ -60,17 +64,15 @@ async function buildLineItems(
         `O item "${name}" foi ignorado pela administração e não pode ser usado em notas.`,
       );
     }
-    await tx.invoiceItem.create({
-      data: {
-        id: newId(),
-        invoice_id: invoiceId,
-        item_id: itemId,
-        description: name,
-        unit,
-        unit_value: it.unitValue,
-      },
+    rows.push({
+      id: newId(),
+      item_id: itemId,
+      description: name,
+      unit,
+      unit_value: it.unitValue,
     });
   }
+  return rows;
 }
 
 /** Edita metadados + local + itens de uma nota (reconcilia recriando os invoice_items). */
@@ -86,8 +88,10 @@ export async function updateInvoice(
   if (!existing) return 0;
 
   const itemType = modelToItemType(data.model);
-  await prisma.$transaction(async (tx) => {
-    await tx.invoice.update({
+  // Itens resolvidos antes; a transação fica só com as 3 escritas rápidas.
+  const rows = await resolveLineItems(itemType, data.items);
+  await prisma.$transaction([
+    prisma.invoice.update({
       where: { id },
       data: {
         model: data.model,
@@ -98,10 +102,10 @@ export async function updateInvoice(
         city: normalizeName(data.city) ?? null,
         state: normalizeName(data.state) ?? null,
       },
-    });
-    await tx.invoiceItem.deleteMany({ where: { invoice_id: id } });
-    await buildLineItems(tx, id, itemType, data.items);
-  });
+    }),
+    prisma.invoiceItem.deleteMany({ where: { invoice_id: id } }),
+    prisma.invoiceItem.createMany({ data: rows.map((r) => ({ ...r, invoice_id: id })) }),
+  ]);
   return 1;
 }
 
@@ -111,25 +115,26 @@ export async function createInvoiceManual(
   data: IInvoiceWriteInput & { companyId: string; accessKey: string },
 ): Promise<string> {
   const itemType = modelToItemType(data.model);
-  return prisma.$transaction(async (tx) => {
-    const invoice = await tx.invoice.create({
-      data: {
-        id: newId(),
-        user_id: userId,
-        company_id: data.companyId,
-        model: data.model,
-        number: normalizeName(data.number) ?? data.number,
-        series: normalizeName(data.series) ?? null,
-        access_key: data.accessKey,
-        issued_at: data.issuedAt,
-        neighborhood: normalizeName(data.neighborhood) ?? null,
-        city: normalizeName(data.city) ?? null,
-        state: normalizeName(data.state) ?? null,
-      },
-    });
-    await buildLineItems(tx, invoice.id, itemType, data.items);
-    return invoice.id;
+  // Itens resolvidos antes (o BusinessError de item ignorado dispara sem criar
+  // nada); nota + itens num único create aninhado, atômico por si só.
+  const rows = await resolveLineItems(itemType, data.items);
+  const invoice = await prisma.invoice.create({
+    data: {
+      id: newId(),
+      user_id: userId,
+      company_id: data.companyId,
+      model: data.model,
+      number: normalizeName(data.number) ?? data.number,
+      series: normalizeName(data.series) ?? null,
+      access_key: data.accessKey,
+      issued_at: data.issuedAt,
+      neighborhood: normalizeName(data.neighborhood) ?? null,
+      city: normalizeName(data.city) ?? null,
+      state: normalizeName(data.state) ?? null,
+      items: { create: rows },
+    },
   });
+  return invoice.id;
 }
 
 export interface IListInvoicesParams {

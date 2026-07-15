@@ -25,18 +25,13 @@ const EMPTY: CompanyFormInput = {
   document: '',
   social_name: '',
   fantasy_name: '',
-  street: '',
-  number: '',
   neighborhood: '',
   city: '',
   state: '',
-  zipcode: '',
 };
 
+// Privacy-first: só o suficiente para o índice regional — sem rua/número/CEP.
 const ADDRESS_FIELDS = [
-  ['zipcode', 'CEP'],
-  ['street', 'Rua / Logradouro'],
-  ['number', 'Número'],
   ['neighborhood', 'Bairro'],
   ['city', 'Cidade'],
   ['state', 'Estado'],
@@ -77,12 +72,9 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
             document: editing.document ?? '',
             social_name: editing.social_name ?? '',
             fantasy_name: editing.fantasy_name ?? '',
-            street: editing.street ?? '',
-            number: editing.number ?? '',
             neighborhood: editing.neighborhood ?? '',
             city: editing.city ?? '',
             state: editing.state ?? '',
-            zipcode: editing.zipcode ?? '',
           }
         : EMPTY,
     [editing],
@@ -111,12 +103,9 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                 document: company.document ?? '',
                 social_name: company.social_name ?? '',
                 fantasy_name: company.fantasy_name ?? '',
-                street: company.street ?? '',
-                number: company.number ?? '',
                 neighborhood: company.neighborhood ?? '',
                 city: company.city ?? '',
                 state: company.state ?? '',
-                zipcode: company.zipcode ?? '',
               }
             : EMPTY,
         );
@@ -190,7 +179,6 @@ export function CompanyModal({ ref }: { ref?: Ref<CompanyModalHandle> }) {
                   <Input
                     name={field.name}
                     label={label}
-                    uppercase={name !== 'zipcode'}
                     disabled={isSubmitting}
                     value={field.state.value ?? ''}
                     onChange={(e) => field.handleChange(e.target.value)}

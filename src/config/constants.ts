@@ -11,6 +11,7 @@ export const API_URL_ACCOUNT = '/api/account';
 // Chaves de cache do TanStack Query (primeiro elemento do queryKey)
 export const TABLE_CATEGORIES = 'categories';
 export const TABLE_ITEMS = 'items';
+export const TABLE_ITEM_ALIASES = 'item_aliases';
 export const TABLE_COMPANIES = 'companies';
 export const TABLE_INVOICES = 'invoices';
 export const TABLE_DASHBOARD_METRICS = 'dashboard_metrics';

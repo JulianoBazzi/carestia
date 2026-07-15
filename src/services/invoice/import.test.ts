@@ -2,18 +2,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// A importação roda fora de transação (ver import.ts) — o mock do client
+// expõe os delegates direto; `tx` é mantido como alias para as asserções.
 const { tx, prismaMock, fetchCnpj } = vi.hoisted(() => {
   const tx = {
     company: { upsert: vi.fn() },
-    item: { findUnique: vi.fn(), upsert: vi.fn() },
+    item: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
+    itemAlias: { findUnique: vi.fn() },
     invoice: { create: vi.fn() },
     $queryRaw: vi.fn(),
   };
-  return {
-    tx,
-    prismaMock: { $transaction: vi.fn((cb: (t: typeof tx) => unknown) => cb(tx)) },
-    fetchCnpj: vi.fn(),
-  };
+  return { tx, prismaMock: tx, fetchCnpj: vi.fn() };
 });
 
 vi.mock('~/lib/prisma', () => ({ default: prismaMock }));
@@ -33,9 +32,10 @@ const nfce = `<nfeProc><NFe><infNFe Id="NFe6526061234567800019965001000000001100
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
   tx.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
+  tx.item.findMany.mockResolvedValue([]); // nenhum item com o mesmo EAN
   tx.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
+  tx.itemAlias.findUnique.mockResolvedValue(null); // sem nome alternativo (alias de mesclagem)
   tx.company.upsert.mockResolvedValue({ id: 'company-1' });
   tx.item.upsert.mockResolvedValue({ id: 'item-1' });
   tx.invoice.create.mockResolvedValue({ id: 'invoice-1' });
@@ -127,7 +127,7 @@ describe('importInvoice — dedupe no lote', () => {
 
     expect(first.status).toBe('imported');
     expect(second.status).toBe('duplicated');
-    // create chamado só 1x (segunda foi barrada antes da transação)
+    // create chamado só 1x (segunda foi barrada antes de tocar o banco)
     expect(tx.invoice.create).toHaveBeenCalledTimes(1);
   });
 });
@@ -139,7 +139,8 @@ describe('importInvoice — NFS-e', () => {
       status: 'error',
       message: 'A importação de NFS-e (nota de serviço) será incluída em uma versão futura.',
     });
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(tx.company.upsert).not.toHaveBeenCalled();
+    expect(tx.invoice.create).not.toHaveBeenCalled();
   });
 });
 
@@ -185,7 +186,10 @@ describe('importInvoice — BrasilAPI fallback', () => {
     expect(fetchCnpj).toHaveBeenCalledWith('11111111000111');
     const create = tx.company.upsert.mock.calls[0][0].create;
     expect(create.origin).toBe('brasilapi');
-    expect(create.street).toBe('RUA API');
+    // Privacy-first: só o local regional é aproveitado — rua/CEP nem existem mais.
+    expect(create.neighborhood).toBe('CENTRO');
+    expect(create.city).toBe('CIDADE');
+    expect(create.street).toBeUndefined();
   });
 });
 
@@ -193,7 +197,8 @@ describe('importInvoice — erros', () => {
   it('retorna error para XML inválido', async () => {
     const result = await importInvoice('user-1', '<foo/>');
     expect(result.status).toBe('error');
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(tx.company.upsert).not.toHaveBeenCalled();
+    expect(tx.invoice.create).not.toHaveBeenCalled();
   });
 
   it('retorna duplicated em violação de unique (P2002)', async () => {

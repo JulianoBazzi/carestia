@@ -11,10 +11,13 @@ import {
 function makeTx() {
   return {
     item: {
-      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({ id: 'x' }),
       upsert: vi.fn().mockResolvedValue({ id: 'novo' }),
+    },
+    itemAlias: {
+      findUnique: vi.fn().mockResolvedValue(null),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
     // biome-ignore lint/suspicious/noExplicitAny: mock do client de transação
@@ -28,7 +31,9 @@ describe('findOrCreateItem — atalho por EAN', () => {
   });
 
   it('reaproveita o item pelo EAN, ignorando nome e preço', async () => {
-    tx.item.findFirst.mockResolvedValue({ id: 'item-ean' });
+    tx.item.findMany.mockResolvedValue([
+      { id: 'item-ean', reference_code: '10063021', name: 'X', deleted_at: null, ignored_at: null },
+    ]);
 
     const id = await findOrCreateItem(tx, {
       type: 'product',
@@ -55,7 +60,7 @@ describe('findOrCreateItem — atalho por EAN', () => {
       unitValue: 3.68,
     });
 
-    expect(tx.item.findFirst).not.toHaveBeenCalled();
+    expect(tx.item.findMany).not.toHaveBeenCalled();
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(tx.item.upsert).toHaveBeenCalledTimes(1);
     expect(id).toBe('novo');
@@ -132,8 +137,16 @@ describe('findOrCreateItem — atalho por EAN', () => {
   });
 
   it('retorna null quando o EAN pertence a um item IGNORADO', async () => {
-    // 1º findFirst (ativos) não acha; 2º findFirst (ignorados) acha.
-    tx.item.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'bloqueado' });
+    // Único hit do EAN é um item ignorado (bloqueio permanente).
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'bloqueado',
+        reference_code: '10063021',
+        name: 'X',
+        deleted_at: new Date('2026-01-01'),
+        ignored_at: new Date('2026-01-01'),
+      },
+    ]);
 
     const id = await findOrCreateItem(tx, {
       type: 'product',
@@ -200,6 +213,133 @@ describe('findOrCreateItem — atalho por EAN', () => {
 
     expect(id).toBe('item-5kg');
     expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () => {
+  let tx: ReturnType<typeof makeTx>;
+  beforeEach(() => {
+    tx = makeTx();
+  });
+
+  it('reimportar item mesclado cai no principal, SEM ressuscitar o source (regressão)', async () => {
+    // A identidade do source existe como alias → retorna o principal. A unique
+    // de items (que acharia o source soft-deletado e o restauraria) nem roda.
+    tx.itemAlias.findUnique.mockResolvedValue({
+      item: { id: 'principal', deleted_at: null, ignored_at: null },
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ETANOL HIDRATADO',
+      unit: 'L',
+      ean: null,
+      unitValue: 3.68,
+    });
+
+    expect(id).toBe('principal');
+    expect(tx.item.findUnique).not.toHaveBeenCalled();
+    expect(tx.item.update).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('retorna null quando o alias aponta para um item IGNORADO', async () => {
+    tx.itemAlias.findUnique.mockResolvedValue({
+      item: {
+        id: 'bloqueado',
+        deleted_at: new Date('2026-01-01'),
+        ignored_at: new Date('2026-01-01'),
+      },
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ETANOL HIDRATADO',
+      unit: 'L',
+      ean: null,
+      unitValue: 3.68,
+    });
+
+    expect(id).toBeNull();
+    expect(tx.item.update).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('restaura o principal quando ele está apenas soft-deletado (oculto comum)', async () => {
+    tx.itemAlias.findUnique.mockResolvedValue({
+      item: { id: 'principal', deleted_at: new Date('2026-01-01'), ignored_at: null },
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ETANOL HIDRATADO',
+      unit: 'L',
+      ean: null,
+      unitValue: 3.68,
+    });
+
+    expect(id).toBe('principal');
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'principal' },
+      data: { deleted_at: null },
+    });
+  });
+
+  it('EAN que só existe num item mesclado resolve pelo alias até o principal', async () => {
+    // Único hit do EAN é uma linha mesclada legada (soft-deletada, não
+    // ignorada), cuja identidade tem alias → principal, sem rodar similaridade.
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'mesclado',
+        reference_code: '22071090',
+        name: 'ETANOL HIDRATADO',
+        deleted_at: new Date('2026-01-01'),
+        ignored_at: null,
+      },
+    ]);
+    tx.itemAlias.findUnique.mockResolvedValue({
+      item: { id: 'principal', deleted_at: null, ignored_at: null },
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'NOME QUE VEIO NA NOTA',
+      unit: 'L',
+      ean: '7891234567890',
+      unitValue: 3.68,
+    });
+
+    expect(id).toBe('principal');
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('EAN em item mesclado SEM alias (merge antigo) segue o fluxo normal', async () => {
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'mesclado',
+        reference_code: '22071090',
+        name: 'ETANOL HIDRATADO',
+        deleted_at: new Date('2026-01-01'),
+        ignored_at: null,
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'ETANOL COMUM',
+      unit: 'L',
+      ean: '7891234567890',
+      unitValue: 3.68,
+    });
+
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(id).toBe('novo');
   });
 });
 

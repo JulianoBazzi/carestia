@@ -1,5 +1,6 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '~/generated/prisma/client';
 import { getSession } from '~/lib/auth/current-user';
 import { errorResponse, parseBody, safeRoute } from '~/lib/http';
 import { buildMeta, getPaginationParams } from '~/lib/pagination';
@@ -10,7 +11,15 @@ import { createItem } from '~/services/management';
 export const runtime = 'nodejs';
 
 const P2002 = 'P2002';
-const SORTABLE = new Set(['name', 'reference_code', 'type', 'created_at', 'updated_at']);
+const SORTABLE = new Set([
+  'name',
+  'reference_code',
+  'type',
+  'unit',
+  'category',
+  'created_at',
+  'updated_at',
+]);
 const TYPES = new Set(['product', 'service']);
 
 export const GET = safeRoute(async (req: NextRequest) => {
@@ -31,6 +40,15 @@ export const GET = safeRoute(async (req: NextRequest) => {
     ...(search && { name: { contains: search, mode: 'insensitive' as const } }),
   };
 
+  // `unit` é nullable: nulos por último para a lista não abrir com itens sem unidade.
+  // `category` ordena pelo nome da relação (itens sem categoria ficam no fim do asc).
+  let orderByClause: Prisma.ItemOrderByWithRelationInput = { [sortField]: order };
+  if (sortField === 'unit') {
+    orderByClause = { unit: { sort: order, nulls: 'last' } };
+  } else if (sortField === 'category') {
+    orderByClause = { category: { name: order } };
+  }
+
   const [rows, total] = await Promise.all([
     prisma.item.findMany({
       where,
@@ -38,7 +56,7 @@ export const GET = safeRoute(async (req: NextRequest) => {
         category: { select: { id: true, name: true } },
         _count: { select: { invoice_items: true } },
       },
-      orderBy: { [sortField]: order },
+      orderBy: orderByClause,
       skip: (page - 1) * limit,
       take: limit,
     }),

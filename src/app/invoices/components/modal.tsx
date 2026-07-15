@@ -1,35 +1,25 @@
 'use client';
 
-import {
-  Box,
-  Circle,
-  Dialog,
-  Field,
-  Flex,
-  HStack,
-  Icon,
-  NativeSelect,
-  SimpleGrid,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
+import { Box, Circle, Dialog, Flex, HStack, Icon, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
-import { type Ref, useImperativeHandle, useRef, useState } from 'react';
+import { type Ref, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { LuFileText, LuPlus, LuShieldCheck, LuTrash2, LuZap } from 'react-icons/lu';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
 import { ActionIconButton } from '~/components/Button/IconButton';
 import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/ConfirmDialog';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
+import { Select } from '~/components/Form/Select';
+import { SelectWithService } from '~/components/Form/SelectWithService';
 import { Input } from '~/components/Input';
 import { LoadingState } from '~/components/LoadingState';
 import { API_URL_INVOICES, TABLE_INFLATION, TABLE_INVOICES } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
 import { maskAccessKey } from '~/lib/mask';
-import { OrderByTypeEnum } from '~/models/Request/Base/IParamsRequest';
+import type ICompanyAPI from '~/models/Entity/Company/ICompanyAPI';
 import { api } from '~/services/apiClient';
-import { useCompanies } from '~/services/hooks/useCompanies';
+import { getCompanies } from '~/services/hooks/useCompanies';
 import { queryClient } from '~/services/queryClient';
 
 export interface IEnergyDraft {
@@ -108,12 +98,20 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
 
   const isCreate = !form.id;
   const isEnergy = form.model === 'nf3e';
-  const companiesQuery = useCompanies({
-    perPage: 200,
-    orderBy: 'social_name',
-    sortedBy: OrderByTypeEnum.Asc,
-  });
-  const companies = companiesQuery.data?.data ?? [];
+  // O estado do form segue guardando só strings (company_id/company_label) —
+  // preserva o dirty-check por JSON.stringify. Este objeto parcial existe só
+  // para o select assíncrono exibir a seleção (ele lê apenas id e rótulo).
+  const selectedCompany = useMemo<ICompanyAPI | null>(
+    () =>
+      form.company_id
+        ? ({
+            id: form.company_id,
+            social_name: form.company_label,
+            fantasy_name: null,
+          } as ICompanyAPI)
+        : null,
+    [form.company_id, form.company_label],
+  );
 
   function patch(changes: Partial<FormState>) {
     setForm((f) => ({ ...f, ...changes }));
@@ -308,22 +306,15 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
           <Stack gap="5">
             <Stack gap="3">
               <SimpleGrid columns={{ base: 1, md: 4 }} gap="3">
-                <Field.Root>
-                  <Field.Label>Tipo de documento</Field.Label>
-                  <NativeSelect.Root disabled={busy}>
-                    <NativeSelect.Field
-                      value={form.model}
-                      onChange={(e) => patch({ model: e.target.value as Model })}
-                    >
-                      {MODEL_OPTIONS.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </NativeSelect.Field>
-                    <NativeSelect.Indicator />
-                  </NativeSelect.Root>
-                </Field.Root>
+                <Select
+                  name="model"
+                  label="Tipo de documento"
+                  disabled={busy}
+                  searchable={false}
+                  options={MODEL_OPTIONS}
+                  value={form.model}
+                  onChange={(v) => patch({ model: (v ?? 'nfe') as Model })}
+                />
                 <Input
                   name="number"
                   label="Número"
@@ -348,27 +339,31 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                 />
               </SimpleGrid>
 
-              <Field.Root>
-                <Field.Label>{isEnergy ? 'Distribuidora (emitente)' : 'Emitente'}</Field.Label>
-                {isCreate ? (
-                  <NativeSelect.Root disabled={busy}>
-                    <NativeSelect.Field
-                      value={form.company_id}
-                      onChange={(e) => patch({ company_id: e.target.value })}
-                    >
-                      <option value="">Selecione…</option>
-                      {companies.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.fantasy_name || c.social_name}
-                        </option>
-                      ))}
-                    </NativeSelect.Field>
-                    <NativeSelect.Indicator />
-                  </NativeSelect.Root>
-                ) : (
-                  <Input name="company" value={form.company_label} disabled />
-                )}
-              </Field.Root>
+              {isCreate ? (
+                <SelectWithService<ICompanyAPI>
+                  name="company_id"
+                  label={isEnergy ? 'Distribuidora (emitente)' : 'Emitente'}
+                  disabled={busy}
+                  clearable
+                  optionLabel={(c) => c.fantasy_name || c.social_name}
+                  orderBy="social_name"
+                  onSearch={getCompanies}
+                  value={selectedCompany}
+                  onChange={(c) =>
+                    patch({
+                      company_id: c?.id ?? '',
+                      company_label: c ? c.fantasy_name || c.social_name : '',
+                    })
+                  }
+                />
+              ) : (
+                <Input
+                  name="company"
+                  label={isEnergy ? 'Distribuidora (emitente)' : 'Emitente'}
+                  value={form.company_label}
+                  disabled
+                />
+              )}
 
               <Text fontSize="xs" fontWeight="bold" color="fg.muted" letterSpacing="wide">
                 {isEnergy ? 'LOCAL DE CONSUMO' : 'LOCAL DA COMPRA'} (para o índice regional)

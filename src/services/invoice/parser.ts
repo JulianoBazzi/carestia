@@ -2,17 +2,16 @@ import { XMLParser } from 'fast-xml-parser';
 
 export type InvoiceType = 'nfe' | 'nfce' | 'nfse' | 'nf3e';
 
+// Privacy-first: do endereço do emitente só bairro/cidade/UF/IBGE (índice
+// regional) — sem rua/número/CEP.
 export interface ICompanyDTO {
   document: string; // CNPJ
   socialName: string;
   fantasyName?: string;
-  street?: string;
-  number?: string;
   neighborhood?: string;
   city?: string;
   ibgeCode?: string;
   state?: string;
-  zipcode?: string;
 }
 
 export interface IItemDTO {
@@ -92,7 +91,7 @@ export function detectType(xml: string): InvoiceType {
   if (infNFe) return nfeModel(infNFe);
   if (obj.nf3eProc || obj.NF3e) return 'nf3e';
   if (obj.NFSe) return 'nfse';
-  throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e nem NFS-e.');
+  throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e e NFS-e.');
 }
 
 export function parseXml(xml: string): IParsedInvoice {
@@ -100,7 +99,7 @@ export function parseXml(xml: string): IParsedInvoice {
   if (obj.nfeProc || obj.NFe) return parseNFe(obj);
   if (obj.nf3eProc || obj.NF3e) return parseNF3e(obj);
   if (obj.NFSe) return parseNFSe(obj);
-  throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e nem NFS-e.');
+  throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e e NFS-e.');
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: estrutura XML dinâmica
@@ -116,13 +115,10 @@ export function parseNFe(obj: any): IParsedInvoice {
     document: str(emit.CNPJ),
     socialName: str(emit.xNome),
     fantasyName: emit.xFant ? str(emit.xFant) : undefined,
-    street: addr.xLgr ? str(addr.xLgr) : undefined,
-    number: addr.nro ? str(addr.nro) : undefined,
     neighborhood: addr.xBairro ? str(addr.xBairro) : undefined,
     city: addr.xMun ? str(addr.xMun) : undefined,
     ibgeCode: addr.cMun ? str(addr.cMun) : undefined,
     state: addr.UF ? str(addr.UF) : undefined,
-    zipcode: addr.CEP ? str(addr.CEP) : undefined,
   };
 
   const items: IItemDTO[] = toArray(infNFe.det).map((det) => {
@@ -167,13 +163,10 @@ export function parseNFSe(obj: any): IParsedInvoice {
   const company: ICompanyDTO = {
     document: str(emit.CNPJ),
     socialName: str(emit.xNome),
-    street: addr.xLgr ? str(addr.xLgr) : undefined,
-    number: addr.nro ? str(addr.nro) : undefined,
     neighborhood: addr.xBairro ? str(addr.xBairro) : undefined,
     city: inf.xLocPrestacao ? str(inf.xLocPrestacao) : undefined,
     ibgeCode: addr.cMun ? str(addr.cMun) : undefined,
     state: addr.UF ? str(addr.UF) : undefined,
-    zipcode: addr.CEP ? str(addr.CEP) : undefined,
   };
 
   const serviceValue = str(values.vServ ?? inf.valores?.vLiq);
@@ -232,13 +225,10 @@ export function parseNF3e(obj: any): IParsedInvoice {
     document: str(emit.CNPJ),
     socialName: str(emit.xNome),
     fantasyName: emit.xFant ? str(emit.xFant) : undefined,
-    street: addr.xLgr ? str(addr.xLgr) : undefined,
-    number: addr.nro ? str(addr.nro) : undefined,
     neighborhood: addr.xBairro ? str(addr.xBairro) : undefined,
     city: addr.xMun ? str(addr.xMun) : undefined,
     ibgeCode: addr.cMun ? str(addr.cMun) : undefined,
     state: addr.UF ? str(addr.UF) : undefined,
-    zipcode: addr.CEP ? str(addr.CEP) : undefined,
   };
 
   // Local de consumo = endereço do acessante (anonimizado: bairro/cidade/UF).

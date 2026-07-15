@@ -6,3 +6,4 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@tanstack/form-core@1.33.1'
   - '@tanstack/react-form@1.33.1'
+  - openai@6.47.0

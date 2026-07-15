@@ -1,20 +1,11 @@
 'use client';
 
-import {
-  Box,
-  Flex,
-  Heading,
-  HStack,
-  Input,
-  NativeSelect,
-  SegmentGroup,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
+import { Box, Flex, Heading, HStack, Input, SegmentGroup, Stack, Text } from '@chakra-ui/react';
 import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
-import { LuBan, LuPencil, LuPlus, LuSparkles } from 'react-icons/lu';
+import { LuBan, LuPencil, LuPlus, LuSparkles, LuTags } from 'react-icons/lu';
+import { AliasesModal, type AliasesModalHandle } from '~/app/items/components/aliases-modal';
 import {
   CategorizeModal,
   type CategorizeModalHandle,
@@ -24,6 +15,8 @@ import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { ActionIconButton } from '~/components/Button/IconButton';
 import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/ConfirmDialog';
+import { Select } from '~/components/Form/Select';
+import { SelectWithService } from '~/components/Form/SelectWithService';
 import { type CustomColumnDef, TableWithService } from '~/components/Form/TableWithService';
 import { API_URL_ITEMS, TABLE_ITEMS } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
@@ -31,7 +24,7 @@ import type IItemAPI from '~/models/Entity/Item/IItemAPI';
 import { OrderByTypeEnum } from '~/models/Request/Base/IParamsRequest';
 import { api } from '~/services/apiClient';
 import { useCategories } from '~/services/hooks/useCategories';
-import { useItems } from '~/services/hooks/useItems';
+import { getItems, useItems } from '~/services/hooks/useItems';
 import { queryClient } from '~/services/queryClient';
 
 const TYPE_FILTERS = [
@@ -49,21 +42,27 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
   const modalRef = useRef<ItemModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const categorizeModalRef = useRef<CategorizeModalHandle>(null);
+  const aliasesModalRef = useRef<AliasesModalHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 500);
   const [typeFilter, setTypeFilter] = useState('');
-  const [source, setSource] = useState('');
-  const [target, setTarget] = useState('');
+  const [source, setSource] = useState<IItemAPI | null>(null);
+  const [target, setTarget] = useState<IItemAPI | null>(null);
 
   const categoriesQuery = useCategories({
     perPage: 100,
     orderBy: 'name',
     sortedBy: OrderByTypeEnum.Asc,
   });
+  // Usado apenas para o contador de itens sem categoria (limitado a 100, como antes).
   const itemsQuery = useItems({ perPage: 100 });
   const categories = categoriesQuery.data?.data ?? [];
   const allItems = itemsQuery.data?.data ?? [];
+  const categoryOptions = useMemo(
+    () => categories.map((c) => ({ value: c.id, label: c.name })),
+    [categories],
+  );
 
   const setCategoryMutation = useMutation({
     mutationFn: ({ id, categoryId }: { id: string; categoryId: string | null }) =>
@@ -89,11 +88,15 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
   });
 
   const mergeMutation = useMutation({
-    mutationFn: () => api.post('/api/items/merge', { sourceId: source, targetId: target }),
+    mutationFn: () =>
+      api.post('/api/items/merge', {
+        sourceId: source?.id,
+        targetId: target?.id,
+      }),
     async onSuccess() {
       successFeedbackToast('Itens', 'Mesclados com sucesso!');
-      setSource('');
-      setTarget('');
+      setSource(null);
+      setTarget(null);
       await queryClient.invalidateQueries({ queryKey: [TABLE_ITEMS] });
     },
     onError(error: Error) {
@@ -122,7 +125,13 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
       {
         accessorKey: 'name',
         header: 'Nome',
-        cell: ({ row }) => <Text fontWeight="medium">{row.original.name}</Text>,
+        // maxW limita a coluna (o table layout dimensiona pelo conteúdo) e o
+        // nome quebra em múltiplas linhas em vez de esticar indefinidamente.
+        cell: ({ row }) => (
+          <Text fontWeight="medium" maxW="96" whiteSpace="normal">
+            {row.original.name}
+          </Text>
+        ),
       },
       {
         accessorKey: 'type',
@@ -138,27 +147,24 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
       {
         id: 'category',
         header: 'Categoria',
-        enableSorting: false,
         cell: ({ row }) => (
-          <NativeSelect.Root size="sm" maxW="48">
-            <NativeSelect.Field
-              value={row.original.category_id ?? ''}
-              onChange={(e) =>
+          <Box maxW="48" minW="40">
+            <Select
+              // instanceId único por linha (evita ids duplicados no DOM).
+              name={`category-${row.original.id}`}
+              size="sm"
+              usePortal
+              placeholder="Sem categoria"
+              options={categoryOptions}
+              value={row.original.category_id}
+              onChange={(v) =>
                 setCategoryMutation.mutate({
                   id: row.original.id,
-                  categoryId: e.target.value || null,
+                  categoryId: v,
                 })
               }
-            >
-              <option value="">Sem categoria</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </NativeSelect.Field>
-            <NativeSelect.Indicator />
-          </NativeSelect.Root>
+            />
+          </Box>
         ),
       },
       {
@@ -173,6 +179,14 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
             >
               <LuPencil />
             </ActionIconButton>
+            {canManage && (
+              <ActionIconButton
+                aria-label="Nomes alternativos"
+                onClick={() => aliasesModalRef.current?.open(row.original)}
+              >
+                <LuTags />
+              </ActionIconButton>
+            )}
             {canManage && (
               <ActionIconButton
                 aria-label="Ignorar"
@@ -194,7 +208,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
         ),
       },
     ],
-    [categories, setCategoryMutation, removeMutation, canManage],
+    [categoryOptions, setCategoryMutation, removeMutation, canManage],
   );
 
   return (
@@ -266,33 +280,33 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
             Reaponta o histórico de um item para outro e remove o duplicado.
           </Text>
           <HStack gap="2" wrap="wrap" align="end">
-            <NativeSelect.Root size="sm" maxW="64">
-              <NativeSelect.Field value={source} onChange={(e) => setSource(e.target.value)}>
-                <option value="">Item de origem (será removido)</option>
-                {allItems.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </NativeSelect.Field>
-              <NativeSelect.Indicator />
-            </NativeSelect.Root>
-            <NativeSelect.Root size="sm" maxW="64">
-              <NativeSelect.Field value={target} onChange={(e) => setTarget(e.target.value)}>
-                <option value="">Item de destino (será mantido)</option>
-                {allItems.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </NativeSelect.Field>
-              <NativeSelect.Indicator />
-            </NativeSelect.Root>
+            <Box w="40%">
+              <SelectWithService<IItemAPI>
+                name="merge-source"
+                size="sm"
+                placeholder="Item de origem (será removido)"
+                onSearch={getItems}
+                value={source}
+                onChange={setSource}
+                disabled={mergeMutation.isPending}
+              />
+            </Box>
+            <Box w="40%">
+              <SelectWithService<IItemAPI>
+                name="merge-target"
+                size="sm"
+                placeholder="Item de destino (será mantido)"
+                onSearch={getItems}
+                value={target}
+                onChange={setTarget}
+                disabled={mergeMutation.isPending}
+              />
+            </Box>
             <PrimaryButton
               size="sm"
               loading={mergeMutation.isPending}
               onClick={() => {
-                if (!source || !target || source === target) {
+                if (!source || !target || source.id === target.id) {
                   errorFeedbackToast('Itens', 'Selecione dois itens diferentes.');
                   return;
                 }
@@ -308,6 +322,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
       <ItemModal ref={modalRef} />
       <ConfirmDialog ref={confirmRef} />
       <CategorizeModal ref={categorizeModalRef} />
+      <AliasesModal ref={aliasesModalRef} />
     </Stack>
   );
 }

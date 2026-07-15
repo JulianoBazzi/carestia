@@ -13,12 +13,9 @@ export const runtime = 'nodejs';
 const FIELDS: (keyof ICompanyUpdate)[] = [
   'social_name',
   'fantasy_name',
-  'street',
-  'number',
   'neighborhood',
   'city',
   'state',
-  'zipcode',
 ];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

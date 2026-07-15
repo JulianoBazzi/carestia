@@ -4,7 +4,7 @@ export function getPaginationParams(searchParams: URLSearchParams) {
   const limit = Math.max(1, Math.min(100, Number(perPage ?? 20)));
   const orderBy = searchParams.get('orderBy') ?? 'created_at';
   const sort = searchParams.get('order') ?? searchParams.get('sortedBy');
-  const order = sort === 'asc' ? 'asc' : 'desc';
+  const order: 'asc' | 'desc' = sort === 'asc' ? 'asc' : 'desc';
   return { page, limit, orderBy, order };
 }
 

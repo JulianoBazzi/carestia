@@ -32,12 +32,9 @@ CREATE TABLE "companies" (
     "document" VARCHAR(14) NOT NULL,
     "social_name" VARCHAR(255) NOT NULL,
     "fantasy_name" VARCHAR(255),
-    "street" VARCHAR(255),
-    "number" VARCHAR(20),
     "neighborhood" VARCHAR(255),
     "city" VARCHAR(255),
     "state" VARCHAR(2),
-    "zipcode" VARCHAR(8),
     "ibge_code" VARCHAR(7),
     "origin" VARCHAR(20) NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -63,6 +60,18 @@ CREATE TABLE "items" (
     "ignored_at" TIMESTAMPTZ,
 
     CONSTRAINT "items_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "item_aliases" (
+    "id" VARCHAR(26) NOT NULL,
+    "item_id" VARCHAR(26) NOT NULL,
+    "type" "item_type" NOT NULL,
+    "reference_code" VARCHAR(20) NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "item_aliases_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -108,7 +117,7 @@ CREATE TABLE "invoice_items" (
     "item_id" VARCHAR(26) NOT NULL,
     "description" VARCHAR(255) NOT NULL,
     "unit" VARCHAR(10),
-    "unit_value" DECIMAL(14,6) NOT NULL,
+    "unit_value" DECIMAL(14,2) NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "invoice_items_pkey" PRIMARY KEY ("id")
@@ -142,6 +151,15 @@ CREATE INDEX "items_name_idx" ON "items" USING GIN ("name" gin_trgm_ops);
 CREATE UNIQUE INDEX "items_type_reference_code_name_key" ON "items"("type", "reference_code", "name");
 
 -- CreateIndex
+CREATE INDEX "item_aliases_item_id_idx" ON "item_aliases"("item_id");
+
+-- CreateIndex
+CREATE INDEX "item_aliases_name_idx" ON "item_aliases" USING GIN ("name" gin_trgm_ops);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "item_aliases_type_reference_code_name_key" ON "item_aliases"("type", "reference_code", "name");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
@@ -167,6 +185,9 @@ CREATE INDEX "invoice_items_item_id_idx" ON "invoice_items"("item_id");
 
 -- AddForeignKey
 ALTER TABLE "items" ADD CONSTRAINT "items_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "item_aliases" ADD CONSTRAINT "item_aliases_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "invoices" ADD CONSTRAINT "invoices_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

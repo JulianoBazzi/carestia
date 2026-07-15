@@ -1,20 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { tx, prismaMock } = vi.hoisted(() => {
-  const tx = {
-    invoice: { update: vi.fn(), create: vi.fn() },
-    invoiceItem: { deleteMany: vi.fn(), create: vi.fn() },
-    item: { findUnique: vi.fn(), upsert: vi.fn() },
+// A resolução de itens roda fora de transação e a escrita usa transação em
+// array (updateInvoice) ou create aninhado (createInvoiceManual) — o mock
+// expõe os delegates direto no client.
+const { prismaMock } = vi.hoisted(() => ({
+  prismaMock: {
+    invoice: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+    invoiceItem: { deleteMany: vi.fn(), createMany: vi.fn() },
+    item: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
+    itemAlias: { findUnique: vi.fn() },
     $queryRaw: vi.fn(),
-  };
-  return {
-    tx,
-    prismaMock: {
-      invoice: { findFirst: vi.fn() },
-      $transaction: vi.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
-    },
-  };
-});
+    $transaction: vi.fn(),
+  },
+}));
 
 vi.mock('~/lib/prisma', () => ({ default: prismaMock }));
 
@@ -32,24 +30,27 @@ const baseData = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.$transaction.mockImplementation((cb: (t: typeof tx) => unknown) => cb(tx));
-  tx.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
-  tx.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
-  tx.item.upsert.mockResolvedValue({ id: 'item-x' });
-  tx.invoiceItem.create.mockResolvedValue({});
-  tx.invoiceItem.deleteMany.mockResolvedValue({ count: 0 });
-  tx.invoice.update.mockResolvedValue({});
-  tx.invoice.create.mockResolvedValue({ id: 'invoice-1' });
+  prismaMock.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
+  prismaMock.item.findMany.mockResolvedValue([]); // nenhum item com o mesmo EAN
+  prismaMock.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
+  prismaMock.itemAlias.findUnique.mockResolvedValue(null); // sem nome alternativo (alias de mesclagem)
+  prismaMock.item.upsert.mockResolvedValue({ id: 'item-x' });
+  prismaMock.invoiceItem.createMany.mockReturnValue('create-many-op');
+  prismaMock.invoiceItem.deleteMany.mockReturnValue('delete-op');
+  prismaMock.invoice.update.mockReturnValue('update-op');
+  prismaMock.invoice.create.mockResolvedValue({ id: 'invoice-1' });
+  prismaMock.$transaction.mockResolvedValue([]);
 });
 
 describe('updateInvoice', () => {
-  it('retorna 0 e não abre transação quando a nota não é do usuário', async () => {
+  it('retorna 0 e não escreve nada quando a nota não é do usuário', async () => {
     prismaMock.invoice.findFirst.mockResolvedValue(null);
 
     const result = await updateInvoice('user-1', 'inv-1', baseData);
 
     expect(result).toBe(0);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.item.upsert).not.toHaveBeenCalled();
   });
 
   it('reconcilia recriando os invoice_items (delete + recreate) preservando o preço em R$', async () => {
@@ -58,19 +59,27 @@ describe('updateInvoice', () => {
     const result = await updateInvoice('user-1', 'inv-1', baseData);
 
     expect(result).toBe(1);
-    expect(tx.invoice.update).toHaveBeenCalledWith(
+    expect(prismaMock.invoice.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'inv-1' } }),
     );
-    // Apaga os itens antigos antes de recriar.
-    expect(tx.invoiceItem.deleteMany).toHaveBeenCalledWith({ where: { invoice_id: 'inv-1' } });
-    // Um upsert de Item global e um invoice_item por linha.
-    expect(tx.item.upsert).toHaveBeenCalledTimes(2);
-    expect(tx.invoiceItem.create).toHaveBeenCalledTimes(2);
-    expect(tx.invoiceItem.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ unit_value: 25.9, description: 'ARROZ' }),
-      }),
-    );
+    // Apaga os itens antigos e recria em lote, tudo na mesma transação (array).
+    expect(prismaMock.invoiceItem.deleteMany).toHaveBeenCalledWith({
+      where: { invoice_id: 'inv-1' },
+    });
+    // Um upsert de Item global por linha (fora da transação).
+    expect(prismaMock.item.upsert).toHaveBeenCalledTimes(2);
+    const createManyArg = prismaMock.invoiceItem.createMany.mock.calls[0][0];
+    expect(createManyArg.data).toHaveLength(2);
+    expect(createManyArg.data[0]).toMatchObject({
+      invoice_id: 'inv-1',
+      unit_value: 25.9,
+      description: 'ARROZ',
+    });
+    expect(prismaMock.$transaction).toHaveBeenCalledWith([
+      'update-op',
+      'delete-op',
+      'create-many-op',
+    ]);
   });
 
   it('deriva o tipo do item a partir do modelo (nf3e → energy)', async () => {
@@ -78,7 +87,7 @@ describe('updateInvoice', () => {
 
     await updateInvoice('user-1', 'inv-1', { ...baseData, model: 'nf3e' });
 
-    expect(tx.item.upsert).toHaveBeenCalledWith(
+    expect(prismaMock.item.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: expect.objectContaining({ type: 'energy' }) }),
     );
   });
@@ -91,27 +100,30 @@ describe('itens ignorados (bloqueio permanente)', () => {
     ignored_at: new Date('2026-01-01'),
   };
 
-  it('updateInvoice rejeita linha que casa um item ignorado', async () => {
+  it('updateInvoice rejeita linha que casa um item ignorado, sem escrever nada', async () => {
     prismaMock.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
-    tx.item.findUnique.mockResolvedValue(ignored);
+    prismaMock.item.findUnique.mockResolvedValue(ignored);
 
     await expect(updateInvoice('user-1', 'inv-1', baseData)).rejects.toThrow(
       'foi ignorado pela administração',
     );
-    expect(tx.invoiceItem.create).not.toHaveBeenCalled();
+    // O erro dispara na resolução, antes da transação de escrita.
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.invoiceItem.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('createInvoiceManual rejeita linha que casa um item ignorado', async () => {
-    tx.item.findUnique.mockResolvedValue(ignored);
+  it('createInvoiceManual rejeita linha que casa um item ignorado, sem criar a nota', async () => {
+    prismaMock.item.findUnique.mockResolvedValue(ignored);
 
     await expect(
       createInvoiceManual('user-1', { ...baseData, companyId: 'company-1', accessKey: 'manual-2' }),
     ).rejects.toThrow('foi ignorado pela administração');
+    expect(prismaMock.invoice.create).not.toHaveBeenCalled();
   });
 });
 
 describe('createInvoiceManual', () => {
-  it('cria a nota e os invoice_items na mesma transação', async () => {
+  it('cria a nota com os invoice_items num único create aninhado (atômico)', async () => {
     const id = await createInvoiceManual('user-1', {
       ...baseData,
       companyId: 'company-1',
@@ -119,7 +131,12 @@ describe('createInvoiceManual', () => {
     });
 
     expect(id).toBe('invoice-1');
-    expect(tx.invoice.create).toHaveBeenCalledTimes(1);
-    expect(tx.invoiceItem.create).toHaveBeenCalledTimes(2);
+    expect(prismaMock.invoice.create).toHaveBeenCalledTimes(1);
+    const createArg = prismaMock.invoice.create.mock.calls[0][0].data;
+    expect(createArg.items.create).toHaveLength(2);
+    expect(createArg.items.create[0]).toMatchObject({
+      unit_value: 25.9,
+      description: 'ARROZ',
+    });
   });
 });

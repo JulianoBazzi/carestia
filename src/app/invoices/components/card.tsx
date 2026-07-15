@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Flex, Heading, HStack, Input, NativeSelect, Stack, Text } from '@chakra-ui/react';
+import { Button, Flex, Heading, HStack, Input, Stack, Text } from '@chakra-ui/react';
 import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import NextLink from 'next/link';
@@ -12,17 +12,27 @@ import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { ActionIconButton } from '~/components/Button/IconButton';
 import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/ConfirmDialog';
+import { Select } from '~/components/Form/Select';
+import { SelectWithService } from '~/components/Form/SelectWithService';
 import { type CustomColumnDef, TableWithService } from '~/components/Form/TableWithService';
 import { API_URL_INVOICES, TABLE_INFLATION, TABLE_INVOICES } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
 import { maskAccessKey } from '~/lib/mask';
+import type ICompanyAPI from '~/models/Entity/Company/ICompanyAPI';
 import type IInvoiceAPI from '~/models/Entity/Invoice/IInvoiceAPI';
-import { OrderByTypeEnum } from '~/models/Request/Base/IParamsRequest';
+import type ISelectOption from '~/models/ISelectOption';
 import type IInvoiceParamsRequest from '~/models/Request/IInvoiceParamsRequest';
 import { api } from '~/services/apiClient';
-import { useCompanies } from '~/services/hooks/useCompanies';
+import { getCompanies } from '~/services/hooks/useCompanies';
 import { invoiceModelInfo, useInvoices } from '~/services/hooks/useInvoices';
 import { queryClient } from '~/services/queryClient';
+
+const TYPE_OPTIONS: ISelectOption[] = [
+  { value: 'nfe', label: 'NF-e' },
+  { value: 'nfce', label: 'NFC-e' },
+  { value: 'nfse', label: 'NFS-e' },
+  { value: 'nf3e', label: 'Energia' },
+];
 
 interface InvoicesCardProps {
   keyImportEnabled: boolean;
@@ -35,17 +45,10 @@ export function InvoicesCard({ keyImportEnabled }: InvoicesCardProps) {
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [company, setCompany] = useState('');
+  const [company, setCompany] = useState<ICompanyAPI | null>(null);
   const [search, setSearch] = useState('');
   // Evita refetch a cada tecla: a query usa o valor debounced; o input segue imediato.
   const debouncedSearch = useDebounce(search, 500);
-
-  const companiesQuery = useCompanies({
-    perPage: 200,
-    orderBy: 'social_name',
-    sortedBy: OrderByTypeEnum.Asc,
-  });
-  const companies = companiesQuery.data?.data ?? [];
 
   const removeMutation = useMutation({
     mutationFn: (id: string) => api.delete(`${API_URL_INVOICES}/${id}`),
@@ -211,27 +214,31 @@ export function InvoicesCard({ keyImportEnabled }: InvoicesCardProps) {
       <AdSlot variant="banner" />
 
       <HStack gap="2" wrap="wrap" align="end">
-        <NativeSelect.Root size="sm" maxW="40" bg="bg.surface">
-          <NativeSelect.Field value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="">Todos os tipos</option>
-            <option value="nfe">NF-e</option>
-            <option value="nfce">NFC-e</option>
-            <option value="nfse">NFS-e</option>
-            <option value="nf3e">Energia</option>
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
-        <NativeSelect.Root size="sm" maxW="48" bg="bg.surface">
-          <NativeSelect.Field value={company} onChange={(e) => setCompany(e.target.value)}>
-            <option value="">Todas as empresas</option>
-            {companies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.fantasy_name || c.social_name}
-              </option>
-            ))}
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
+        <Select
+          name="filter-type"
+          size="sm"
+          maxW="40"
+          bg="bg.surface"
+          clearable
+          searchable={false}
+          placeholder="Todos os tipos"
+          options={TYPE_OPTIONS}
+          value={type}
+          onChange={(v) => setType(v ?? '')}
+        />
+        <SelectWithService<ICompanyAPI>
+          name="filter-company"
+          size="sm"
+          maxW="56"
+          bg="bg.surface"
+          clearable
+          placeholder="Todas as empresas"
+          optionLabel={(c) => c.fantasy_name || c.social_name}
+          orderBy="social_name"
+          onSearch={getCompanies}
+          value={company}
+          onChange={setCompany}
+        />
         <Input
           size="sm"
           type="date"
@@ -264,7 +271,7 @@ export function InvoicesCard({ keyImportEnabled }: InvoicesCardProps) {
           type: (type || null) as IInvoiceParamsRequest['type'],
           from: from || null,
           to: to || null,
-          company: company || null,
+          company: company?.id ?? null,
           search: debouncedSearch,
         }}
         onSearch={useInvoices}
