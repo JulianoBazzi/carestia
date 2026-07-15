@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // expõe os delegates direto; `tx` é mantido como alias para as asserções.
 const { tx, prismaMock, fetchCnpj } = vi.hoisted(() => {
   const tx = {
-    company: { upsert: vi.fn() },
+    company: { upsert: vi.fn(), findUnique: vi.fn() },
     item: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
     itemAlias: { findUnique: vi.fn() },
     invoice: { create: vi.fn() },
@@ -37,6 +37,7 @@ beforeEach(() => {
   tx.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
   tx.itemAlias.findUnique.mockResolvedValue(null); // sem nome alternativo (alias de mesclagem)
   tx.company.upsert.mockResolvedValue({ id: 'company-1' });
+  tx.company.findUnique.mockResolvedValue(null); // empresa ainda não cadastrada
   tx.item.upsert.mockResolvedValue({ id: 'item-1' });
   tx.invoice.create.mockResolvedValue({ id: 'invoice-1' });
   fetchCnpj.mockResolvedValue(null);
@@ -59,9 +60,9 @@ describe('importInvoice — NF-e', () => {
     // Privacy-first: sem total da nota, XML cru, quantidade nem total por item.
     expect(invoiceArg.total_value).toBeUndefined();
     expect(invoiceArg.raw_xml).toBeUndefined();
-    expect(invoiceArg.items.create[0].quantity).toBeUndefined();
-    expect(invoiceArg.items.create[0].total_value).toBeUndefined();
-    expect(invoiceArg.items.create[0].unit_value).toBeCloseTo(3.68); // R$/un
+    expect(invoiceArg.items.createMany.data[0].quantity).toBeUndefined();
+    expect(invoiceArg.items.createMany.data[0].total_value).toBeUndefined();
+    expect(invoiceArg.items.createMany.data[0].unit_value).toBeCloseTo(3.68); // R$/un
 
     const itemArg = tx.item.upsert.mock.calls[0][0];
     expect(itemArg.create.type).toBe('product');
@@ -92,7 +93,7 @@ describe('importInvoice — dedup por similaridade (pg_trgm)', () => {
     // Candidato acima do limiar → não cria item novo.
     expect(tx.item.upsert).not.toHaveBeenCalled();
     const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
-    expect(invoiceArg.items.create[0].item_id).toBe('item-existente');
+    expect(invoiceArg.items.createMany.data[0].item_id).toBe('item-existente');
   });
 });
 
@@ -115,7 +116,7 @@ describe('importInvoice — item ignorado', () => {
     });
     // Nem cria item novo, nem anexa a linha à nota.
     expect(tx.item.upsert).not.toHaveBeenCalled();
-    expect(tx.invoice.create.mock.calls[0][0].data.items.create).toEqual([]);
+    expect(tx.invoice.create.mock.calls[0][0].data.items.createMany.data).toEqual([]);
   });
 });
 
@@ -151,7 +152,7 @@ describe('importInvoice — NFC-e', () => {
 
     const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
     expect(invoiceArg.model).toBe('nfce');
-    expect(invoiceArg.items.create[0].unit_value).toBeCloseTo(5); // R$ 5,00/un
+    expect(invoiceArg.items.createMany.data[0].unit_value).toBeCloseTo(5); // R$ 5,00/un
 
     const itemArg = tx.item.upsert.mock.calls[0][0];
     expect(itemArg.create.type).toBe('product');
@@ -161,6 +162,82 @@ describe('importInvoice — NFC-e', () => {
   it('não consulta BrasilAPI quando NFC-e tem endereço', async () => {
     await importInvoice('user-1', nfce);
     expect(fetchCnpj).not.toHaveBeenCalled();
+  });
+});
+
+describe('importInvoice — linhas repetidas e paralelismo', () => {
+  // Mesmo produto em duas linhas (cupom com item escaneado 2×).
+  const nfceRepeatedLine = nfce.replace(/<det>.*<\/det>/, (det) => det + det);
+  // Duas linhas de produtos diferentes (valida a ordem das rows pós-paralelismo).
+  const nfceTwoProducts = nfce.replace(
+    /<det>.*<\/det>/,
+    (det) => det + det.replace('CERVEJA LATA', 'AGUA MINERAL').replace('22030000', '22011000'),
+  );
+
+  it('linhas idênticas resolvem o item UMA vez e geram uma row por linha', async () => {
+    const result = await importInvoice('user-1', nfceRepeatedLine);
+
+    expect(result.status).toBe('imported');
+    // Identidade repetida não re-roda o matching (nem a query de similaridade).
+    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    const rows = tx.invoice.create.mock.calls[0][0].data.items.createMany.data;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].item_id).toBe('item-1');
+    expect(rows[1].item_id).toBe('item-1');
+  });
+
+  it('preserva a ordem das linhas da nota nas rows criadas', async () => {
+    tx.item.upsert.mockImplementation((arg: { create: { name: string } }) =>
+      Promise.resolve({ id: `item-${arg.create.name}` }),
+    );
+
+    const result = await importInvoice('user-1', nfceTwoProducts);
+
+    expect(result.status).toBe('imported');
+    const rows = tx.invoice.create.mock.calls[0][0].data.items.createMany.data;
+    expect(rows.map((r: { item_id: string }) => r.item_id)).toEqual([
+      'item-CERVEJA LATA',
+      'item-AGUA MINERAL',
+    ]);
+  });
+});
+
+describe('importInvoice — empresa já cadastrada (XML sem endereço)', () => {
+  it('usa a localização do banco e pula a BrasilAPI', async () => {
+    tx.company.findUnique.mockResolvedValue({
+      social_name: 'EMPRESA SEM ENDERECO LTDA',
+      fantasy_name: 'LOJA',
+      neighborhood: 'CENTRO',
+      city: 'RONDONOPOLIS',
+      state: 'MT',
+      ibge_code: '5107602',
+    });
+
+    const result = await importInvoice('user-1', nfceNoAddress);
+
+    expect(result.status).toBe('imported');
+    expect(fetchCnpj).not.toHaveBeenCalled();
+    // A localização conhecida preenche o local (anonimizado) da nota.
+    const invoiceArg = tx.invoice.create.mock.calls[0][0].data;
+    expect(invoiceArg.city).toBe('RONDONOPOLIS');
+    expect(invoiceArg.state).toBe('MT');
+    expect(invoiceArg.ibge_code).toBe('5107602');
+  });
+
+  it('empresa cadastrada mas ainda sem localização cai na BrasilAPI', async () => {
+    tx.company.findUnique.mockResolvedValue({
+      social_name: 'EMPRESA SEM ENDERECO LTDA',
+      fantasy_name: null,
+      neighborhood: null,
+      city: null,
+      state: null,
+      ibge_code: null,
+    });
+
+    await importInvoice('user-1', nfceNoAddress);
+
+    expect(fetchCnpj).toHaveBeenCalledWith('11111111000111');
   });
 });
 
@@ -208,5 +285,17 @@ describe('importInvoice — erros', () => {
       status: 'duplicated',
       accessKey: '51260602760668000677550010001165321018655643',
     });
+  });
+
+  it('P2002 na resolução de item NÃO vira duplicated falso', async () => {
+    // Corrida na criação do item: o upsert perde e a re-leitura pela unique
+    // também não acha o vencedor (corrida fantasma) → o erro propaga como
+    // error, nunca como "nota duplicada".
+    tx.item.upsert.mockRejectedValue({ code: 'P2002' });
+
+    const result = await importInvoice('user-1', nfe);
+
+    expect(result.status).toBe('error');
+    expect(tx.invoice.create).not.toHaveBeenCalled();
   });
 });

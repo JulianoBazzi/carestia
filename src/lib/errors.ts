@@ -12,3 +12,13 @@ export class BusinessError extends Error {
     this.status = status;
   }
 }
+
+/**
+ * Violação de unique do Prisma (P2002). Duck-typing em vez de `instanceof`
+ * para não carregar o client gerado em quem só precisa da checagem.
+ */
+export function isUniqueViolation(e: unknown): boolean {
+  return (
+    typeof e === 'object' && e !== null && 'code' in e && (e as { code: string }).code === 'P2002'
+  );
+}

@@ -33,11 +33,16 @@ import {
   TABLE_INFLATION,
   TABLE_INVOICES,
 } from '~/config/constants';
+import { mapPool } from '~/lib/concurrency';
 import { api } from '~/services/apiClient';
 import { queryClient } from '~/services/queryClient';
 
-// Processa vários arquivos ao mesmo tempo (equilíbrio entre velocidade e carga).
-const CONCURRENCY = 5;
+// Vários XMLs por request amortizam HTTP/autenticação e cabem no rate limit do
+// servidor (60 req/h para não-admin); requests em paralelo mantêm o pipeline
+// cheio sem sobrecarregar o banco (o servidor processa cada nota do lote em
+// sequência, paralelizando por dentro).
+const CHUNK_SIZE = 10;
+const CHUNK_CONCURRENCY = 3;
 
 type EntryStatus = 'queued' | 'processing' | 'imported' | 'duplicated' | 'error';
 
@@ -136,17 +141,6 @@ async function expandToEntries(files: File[]): Promise<IEntry[]> {
   return entries;
 }
 
-/** Executa `worker` sobre `items` com no máximo `concurrency` em paralelo. */
-async function runPool<T>(items: T[], worker: (item: T) => Promise<void>, concurrency: number) {
-  let idx = 0;
-  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (idx < items.length) {
-      await worker(items[idx++]);
-    }
-  });
-  await Promise.all(runners);
-}
-
 function entryIcon(status: EntryStatus) {
   switch (status) {
     case 'imported':
@@ -199,25 +193,39 @@ export function InvoiceImport() {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
   }
 
-  async function importEntry(entry: IEntry) {
-    patch(entry.id, { status: 'processing' });
+  async function importChunk(chunk: IEntry[]) {
+    setEntries((prev) => {
+      const ids = new Set(chunk.map((e) => e.id));
+      return prev.map((e) => (ids.has(e.id) ? { ...e, status: 'processing' as const } : e));
+    });
     try {
       const form = new FormData();
-      form.append('file', new File([entry.xml], entry.sendName, { type: 'application/xml' }));
+      for (const entry of chunk) {
+        form.append('file', new File([entry.xml], entry.sendName, { type: 'application/xml' }));
+      }
       const { data } = await api.post<IImportResponse>(`${API_URL_INVOICES}/import`, form);
-      const result = data.results[0];
-      patch(entry.id, {
-        status: result?.status ?? 'error',
-        message:
-          result?.status === 'imported' && result.ignoredItems
-            ? `${result.ignoredItems} item(ns) ignorado(s) pela administração`
-            : result?.message,
+      // O servidor devolve exatamente 1 resultado por arquivo, na ordem enviada.
+      // O casamento é por ÍNDICE: `sendName` pode colidir entre zips diferentes.
+      if (data.results.length !== chunk.length) {
+        throw new Error('Resposta do servidor não corresponde aos arquivos enviados.');
+      }
+      chunk.forEach((entry, i) => {
+        const result = data.results[i];
+        patch(entry.id, {
+          status: result.status,
+          message:
+            result.status === 'imported' && result.ignoredItems
+              ? `${result.ignoredItems} item(ns) ignorado(s) pela administração`
+              : result.message,
+        });
       });
     } catch (e) {
       const message =
         (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         (e as Error).message;
-      patch(entry.id, { status: 'error', message });
+      for (const entry of chunk) {
+        patch(entry.id, { status: 'error', message });
+      }
     }
   }
 
@@ -235,11 +243,12 @@ export function InvoiceImport() {
       setPreparing(false);
 
       // Entradas já marcadas como erro (zip ilegível / sem XML) não vão ao servidor.
-      await runPool(
-        expanded.filter((e) => e.status === 'queued'),
-        importEntry,
-        CONCURRENCY,
-      );
+      const queued = expanded.filter((e) => e.status === 'queued');
+      const chunks: IEntry[][] = [];
+      for (let i = 0; i < queued.length; i += CHUNK_SIZE) {
+        chunks.push(queued.slice(i, i + CHUNK_SIZE));
+      }
+      await mapPool(chunks, CHUNK_CONCURRENCY, importChunk);
     } finally {
       busyRef.current = false;
       setPreparing(false);

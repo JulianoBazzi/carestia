@@ -343,6 +343,60 @@ describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () =>
   });
 });
 
+describe('findOrCreateItem — corrida na criação (P2002 no upsert)', () => {
+  let tx: ReturnType<typeof makeTx>;
+  beforeEach(() => {
+    tx = makeTx();
+  });
+
+  const input = {
+    type: 'product' as const,
+    reference_code: '10063021',
+    name: 'ARROZ TIPO 1 5KG',
+    unit: 'UN',
+    ean: null,
+    unitValue: 25.9,
+  };
+
+  it('re-resolve pela unique quando o upsert perde a corrida', async () => {
+    tx.item.upsert.mockRejectedValue({ code: 'P2002' });
+    tx.item.findUnique
+      .mockResolvedValueOnce(null) // leitura antes do upsert: ainda não existia
+      .mockResolvedValueOnce({ id: 'vencedor', deleted_at: null, ignored_at: null });
+
+    const id = await findOrCreateItem(tx, input);
+
+    expect(id).toBe('vencedor');
+    expect(tx.item.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('mantém o bloqueio se a corrida terminou num item IGNORADO', async () => {
+    tx.item.upsert.mockRejectedValue({ code: 'P2002' });
+    tx.item.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'bloqueado', deleted_at: null, ignored_at: new Date() });
+
+    const id = await findOrCreateItem(tx, input);
+
+    expect(id).toBeNull();
+    expect(tx.item.update).not.toHaveBeenCalled();
+  });
+
+  it('propaga o P2002 se a re-leitura não achar o vencedor (corrida fantasma)', async () => {
+    tx.item.upsert.mockRejectedValue({ code: 'P2002' });
+
+    await expect(findOrCreateItem(tx, input)).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('propaga erro que não é violação de unique', async () => {
+    tx.item.upsert.mockRejectedValue(new Error('conexão caiu'));
+
+    await expect(findOrCreateItem(tx, input)).rejects.toThrow('conexão caiu');
+    // Sem re-leitura: só P2002 aciona o fallback.
+    expect(tx.item.findUnique).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('packSize', () => {
   it('extrai o tamanho embutido no nome', () => {
     expect(packSize('ARROZ TIPO 1 5KG')).toBe('5KG');

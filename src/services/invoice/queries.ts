@@ -131,7 +131,7 @@ export async function createInvoiceManual(
       neighborhood: normalizeName(data.neighborhood) ?? null,
       city: normalizeName(data.city) ?? null,
       state: normalizeName(data.state) ?? null,
-      items: { create: rows },
+      items: { createMany: { data: rows } },
     },
   });
   return invoice.id;

@@ -133,8 +133,8 @@ describe('createInvoiceManual', () => {
     expect(id).toBe('invoice-1');
     expect(prismaMock.invoice.create).toHaveBeenCalledTimes(1);
     const createArg = prismaMock.invoice.create.mock.calls[0][0].data;
-    expect(createArg.items.create).toHaveLength(2);
-    expect(createArg.items.create[0]).toMatchObject({
+    expect(createArg.items.createMany.data).toHaveLength(2);
+    expect(createArg.items.createMany.data[0]).toMatchObject({
       unit_value: 25.9,
       description: 'ARROZ',
     });

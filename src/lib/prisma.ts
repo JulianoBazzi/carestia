@@ -3,6 +3,11 @@ import { PrismaClient } from '~/generated/prisma/client';
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL,
+  // A importação de notas resolve linhas em paralelo (até ~15 queries
+  // simultâneas com 3 requests em voo); o default do pg (10) enfileirava.
+  max: 20,
+  // Sem isto a espera por conexão livre é infinita — melhor um erro claro.
+  connectionTimeoutMillis: 10_000,
 });
 
 const globalForPrisma = globalThis as unknown as {

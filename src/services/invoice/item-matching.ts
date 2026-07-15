@@ -1,5 +1,6 @@
 import 'server-only';
 import type { Prisma } from '~/generated/prisma/client';
+import { isUniqueViolation } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { matchKey, normalizeName } from '~/lib/normalize';
 import { normalizeUnit } from '~/lib/units';
@@ -99,10 +100,32 @@ async function resolveAlias(
 }
 
 /**
+ * Aplica a semântica de adoção de um item achado pela unique exata: IGNORADO
+ * bloqueia a linha (`null`), soft-deletado comum é restaurado (o produto voltou
+ * a ser comprado), ativo é reaproveitado.
+ */
+async function adoptExisting(
+  tx: Prisma.TransactionClient,
+  item: { id: string; deleted_at: Date | null; ignored_at: Date | null },
+): Promise<string | null> {
+  if (item.ignored_at) {
+    return null;
+  }
+  if (item.deleted_at) {
+    await tx.item.update({ where: { id: item.id }, data: { deleted_at: null } });
+  }
+  return item.id;
+}
+
+/**
  * Encontra um `Item` global equivalente (mesmo tipo+código+unidade, nome parecido
  * e preço compatível) e o reaproveita; se nenhum passar nos dois portões, cria um
  * novo. Retorna o `id` do item, ou `null` quando a linha casa com um item
  * IGNORADO (`ignored_at`) — o chamador deve descartar a linha, nunca recriar.
+ *
+ * Seguro para rodar em paralelo (linhas da mesma nota) SOMENTE com o client
+ * raiz (pool): as escritas são idempotentes e a corrida de criação é absorvida
+ * no upsert final. Nunca paralelize com uma transação interativa (conexão única).
  *
  * A extensão `pg_trgm` (habilitada no schema) faz o casamento por similaridade,
  * absorvendo variações de descrição do mesmo produto entre emitentes
@@ -164,35 +187,49 @@ export async function findOrCreateItem(
   // portão de preço enquanto um segundo candidato passa nos dois. Os nomes
   // alternativos (aliases de mesclagem) entram como candidatos do item
   // principal: uma variação nova pode parecer mais com o alias do que com o
-  // nome atual do item.
+  // nome atual do item. A mediana de preço (histórico em invoice_items) é
+  // calculada só para os 5 finalistas — computá-la para todos os candidatos
+  // do NCM encarecia cada linha conforme o banco cresce.
   const rows = await tx.$queryRaw<
     { id: string; name: string; sim: number; median_price: number | null; ean: string | null }[]
   >`
     WITH candidates AS (
-      SELECT i.id, i.name, i.ean, i.unit
+      SELECT i.id, i.name, i.ean
       FROM items i
       WHERE i.type = ${input.type}::item_type
         AND i.reference_code = ${referenceCode}
         AND i.deleted_at IS NULL
+        AND i.unit IS NOT DISTINCT FROM ${unit}::varchar
       UNION ALL
-      SELECT i.id, a.name, i.ean, i.unit
+      SELECT i.id, a.name, i.ean
       FROM item_aliases a
       JOIN items i ON i.id = a.item_id
       WHERE a.type = ${input.type}::item_type
         AND a.reference_code = ${referenceCode}
         AND i.deleted_at IS NULL
+        AND i.unit IS NOT DISTINCT FROM ${unit}::varchar
+    ),
+    finalists AS (
+      SELECT DISTINCT c.id,
+             c.name,
+             c.ean,
+             word_similarity(${key}::text, regexp_replace(c.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim
+      FROM candidates c
+      ORDER BY sim DESC, id
+      LIMIT 5
     )
-    SELECT c.id,
-           c.name,
-           c.ean,
-           word_similarity(${key}::text, regexp_replace(c.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY ii.unit_value) AS median_price
-    FROM candidates c
-    LEFT JOIN invoice_items ii ON ii.item_id = c.id
-    WHERE c.unit IS NOT DISTINCT FROM ${unit}::varchar
-    GROUP BY c.id, c.name, c.ean
-    ORDER BY sim DESC
-    LIMIT 5
+    SELECT f.id,
+           f.name,
+           f.ean,
+           f.sim,
+           m.median_price
+    FROM finalists f
+    LEFT JOIN LATERAL (
+      SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY ii.unit_value) AS median_price
+      FROM invoice_items ii
+      WHERE ii.item_id = f.id
+    ) m ON TRUE
+    ORDER BY f.sim DESC, f.id
   `;
 
   // Terceiro portão: tamanho de embalagem embutido no nome (ex.: "5KG", "500ML").
@@ -241,48 +278,49 @@ export async function findOrCreateItem(
   // Obs.: o bloqueio é determinístico (unique exata, alias ou EAN); um item
   // ignorado ainda pode ressurgir como item NOVO se vier com nome diferente e
   // sem/outro EAN.
-  const existing = await tx.item.findUnique({
-    where: {
-      type_reference_code_name: {
-        type: input.type,
-        reference_code: referenceCode,
-        name,
-      },
-    },
-    select: { id: true, deleted_at: true, ignored_at: true },
-  });
-  if (existing) {
-    if (existing.ignored_at) {
-      return null;
-    }
-    if (existing.deleted_at) {
-      await tx.item.update({ where: { id: existing.id }, data: { deleted_at: null } });
-    }
-    return existing.id;
-  }
-
-  // Cria. O upsert com `update: {}` vazio só absorve a corrida de duas
-  // importações criando o mesmo item ao mesmo tempo (a linha concorrente é
-  // recém-criada e ativa → no-op correto, sem risco de des-esconder um item
-  // ignorado no meio do voo).
-  const item = await tx.item.upsert({
-    where: {
-      type_reference_code_name: {
-        type: input.type,
-        reference_code: referenceCode,
-        name,
-      },
-    },
-    create: {
-      id: newId(),
+  const uniqueWhere = {
+    type_reference_code_name: {
       type: input.type,
       reference_code: referenceCode,
       name,
-      unit,
-      ean: ean ?? null,
-      nbs_code: input.nbs_code ?? null,
     },
-    update: {},
+  };
+  const existing = await tx.item.findUnique({
+    where: uniqueWhere,
+    select: { id: true, deleted_at: true, ignored_at: true },
   });
-  return item.id;
+  if (existing) {
+    return adoptExisting(tx, existing);
+  }
+
+  // Cria. O upsert com `update: {}` vazio absorve a corrida de duas resoluções
+  // criando o mesmo item ao mesmo tempo (a linha concorrente é recém-criada e
+  // ativa → no-op correto, sem risco de des-esconder um item ignorado no meio
+  // do voo). Quando o Prisma emula o upsert (SELECT→INSERT), a corrida ainda
+  // pode vazar como P2002 — nesse caso o item acabou de ser criado pelo voo
+  // concorrente e a re-leitura pela unique resolve com a mesma semântica.
+  try {
+    const item = await tx.item.upsert({
+      where: uniqueWhere,
+      create: {
+        id: newId(),
+        type: input.type,
+        reference_code: referenceCode,
+        name,
+        unit,
+        ean: ean ?? null,
+        nbs_code: input.nbs_code ?? null,
+      },
+      update: {},
+    });
+    return item.id;
+  } catch (e) {
+    if (!isUniqueViolation(e)) throw e;
+    const winner = await tx.item.findUnique({
+      where: uniqueWhere,
+      select: { id: true, deleted_at: true, ignored_at: true },
+    });
+    if (!winner) throw e;
+    return adoptExisting(tx, winner);
+  }
 }

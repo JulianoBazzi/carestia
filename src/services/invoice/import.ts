@@ -1,19 +1,28 @@
+import { mapPool } from '~/lib/concurrency';
+import { isUniqueViolation } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { normalizeUnit } from '~/lib/units';
 import { fetchCnpj } from '~/services/brasilapi';
 import { findOrCreateItem } from '~/services/invoice/item-matching';
-import { type ICompanyDTO, type IParsedInvoice, parseXml } from '~/services/invoice/parser';
+import {
+  type ICompanyDTO,
+  type IItemDTO,
+  type IParsedInvoice,
+  parseXml,
+} from '~/services/invoice/parser';
 
 export type ImportResult =
   | { status: 'imported'; invoiceId: string; accessKey: string; ignoredItems?: number }
   | { status: 'duplicated'; accessKey: string }
   | { status: 'error'; message: string };
 
-const P2002 = 'P2002'; // unique constraint violation
+// Linhas da nota resolvidas em paralelo (limitado): equilíbrio entre acelerar
+// a importação e não esgotar o pool de conexões (~3 requests × 5 ≈ 15 ≤ 20).
+const ITEM_MATCH_CONCURRENCY = 5;
 
-/** Mescla dados da empresa do XML com a BrasilAPI (preenche lacunas). */
+/** Mescla dados da empresa do XML com o banco/BrasilAPI (preenche lacunas). */
 async function resolveCompany(dto: ICompanyDTO) {
   // Privacy-first: só bairro/cidade/UF (índice regional) — sem rua/número/CEP.
   const hasLocation = Boolean(dto.city && dto.state);
@@ -21,17 +30,42 @@ async function resolveCompany(dto: ICompanyDTO) {
   let data = { ...dto };
 
   if (!hasLocation) {
-    const api = await fetchCnpj(dto.document);
-    if (api) {
-      source = dto.city ? 'xml' : 'brasilapi';
+    // Empresa já conhecida com localização dispensa a BrasilAPI (que custava
+    // até 8s por nota em lotes cujo XML não traz endereço do emitente).
+    const known = await prisma.company.findUnique({
+      where: { document: dto.document },
+      select: {
+        social_name: true,
+        fantasy_name: true,
+        neighborhood: true,
+        city: true,
+        state: true,
+        ibge_code: true,
+      },
+    });
+    if (known?.city && known.state) {
       data = {
         ...data,
-        socialName: data.socialName || api.razao_social,
-        fantasyName: data.fantasyName || api.nome_fantasia || undefined,
-        neighborhood: data.neighborhood || api.bairro || undefined,
-        city: data.city || api.municipio || undefined,
-        state: data.state || api.uf || undefined,
+        socialName: data.socialName || known.social_name,
+        fantasyName: data.fantasyName || known.fantasy_name || undefined,
+        neighborhood: data.neighborhood || known.neighborhood || undefined,
+        city: data.city || known.city,
+        state: data.state || known.state,
+        ibgeCode: data.ibgeCode || known.ibge_code || undefined,
       };
+    } else {
+      const api = await fetchCnpj(dto.document);
+      if (api) {
+        source = dto.city ? 'xml' : 'brasilapi';
+        data = {
+          ...data,
+          socialName: data.socialName || api.razao_social,
+          fantasyName: data.fantasyName || api.nome_fantasia || undefined,
+          neighborhood: data.neighborhood || api.bairro || undefined,
+          city: data.city || api.municipio || undefined,
+          state: data.state || api.uf || undefined,
+        };
+      }
     }
   }
 
@@ -76,14 +110,14 @@ export async function importInvoice(
     seenKeys.add(parsed.invoice.accessKey);
   }
 
-  const { data: companyData, origin } = await resolveCompany(parsed.company);
-
   // Empresa e itens são catálogo GLOBAL e ficam fora de transação de propósito:
   // a resolução de itens faz várias queries por linha (EAN, similaridade, alias)
   // e num banco remoto estourava o timeout da transação interativa (5s). Se a
   // criação da nota falhar depois (ex.: duplicada), empresa/itens persistidos
   // são entradas legítimas que o matching reutiliza — nada a desfazer.
   try {
+    const { data: companyData, origin } = await resolveCompany(parsed.company);
+
     const company = await prisma.company.upsert({
       where: { document: companyData.document },
       create: {
@@ -103,11 +137,24 @@ export async function importInvoice(
       },
     });
 
-    const lineItems = [];
-    let ignoredItems = 0;
+    // Identidades repetidas na mesma nota (mesmo produto em mais de uma linha)
+    // resolvem uma vez só e as demais linhas reusam o resultado. A resolução
+    // roda em paralelo (pool limitado): cada linha faz várias queries e, em
+    // série, a latência do banco remoto dominava o tempo de importação.
+    // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por
+    // variação de nome.
+    const identityOf = (it: IItemDTO) =>
+      // Separador que não ocorre nos dados — espaço colidiria com nomes compostos.
+      [it.type, it.referenceCode, it.name, it.unit ?? '', it.ean ?? ''].join('\u0000');
+    const uniqueLines = new Map<string, IItemDTO>();
     for (const it of parsed.items) {
-      // Reaproveita item existente parecido (pg_trgm) em vez de duplicar por variação de nome.
-      const itemId = await findOrCreateItem(prisma, {
+      if (!uniqueLines.has(identityOf(it))) {
+        uniqueLines.set(identityOf(it), it);
+      }
+    }
+    const lines = [...uniqueLines.values()];
+    const resolvedIds = await mapPool(lines, ITEM_MATCH_CONCURRENCY, (it) =>
+      findOrCreateItem(prisma, {
         type: it.type,
         reference_code: it.referenceCode,
         name: it.name,
@@ -115,10 +162,20 @@ export async function importInvoice(
         ean: it.ean,
         nbs_code: it.nbsCode,
         unitValue: Number(it.unitValue),
-      });
+      }),
+    );
+    const itemIdByIdentity = new Map<string, string | null>();
+    lines.forEach((it, i) => {
+      itemIdByIdentity.set(identityOf(it), resolvedIds[i]);
+    });
+
+    const lineItems = [];
+    let ignoredItems = 0;
+    for (const it of parsed.items) {
+      const itemId = itemIdByIdentity.get(identityOf(it));
       // Item ignorado pela administração: a linha é descartada (a nota ainda é
       // criada, preservando o dedup por access_key).
-      if (itemId === null) {
+      if (itemId == null) {
         ignoredItems += 1;
         continue;
       }
@@ -141,43 +198,46 @@ export async function importInvoice(
       ibgeCode: companyData.ibgeCode,
     };
 
-    // Nota + itens num único create aninhado: atômico por si só, sem
-    // transação interativa segurando conexão durante o trabalho acima.
-    const created = await prisma.invoice.create({
-      data: {
-        id: newId(),
-        user_id: userId,
-        company_id: company.id,
-        model: parsed.invoice.model,
-        number: normalizeName(parsed.invoice.number) ?? parsed.invoice.number,
-        series: normalizeName(parsed.invoice.series) ?? null,
-        access_key: parsed.invoice.accessKey,
-        issued_at: new Date(parsed.invoice.issuedAt),
-        // Privacy-first: sem total da nota nem XML cru.
-        neighborhood: normalizeName(location.neighborhood) ?? null,
-        city: normalizeName(location.city) ?? null,
-        state: normalizeName(location.state) ?? null,
-        ibge_code: location.ibgeCode ?? null,
-        items: { create: lineItems },
-      },
-    });
+    // Nota + itens num único create aninhado (createMany = 1 INSERT para todas
+    // as linhas): atômico por si só, sem transação interativa segurando conexão
+    // durante o trabalho acima.
+    try {
+      const created = await prisma.invoice.create({
+        data: {
+          id: newId(),
+          user_id: userId,
+          company_id: company.id,
+          model: parsed.invoice.model,
+          number: normalizeName(parsed.invoice.number) ?? parsed.invoice.number,
+          series: normalizeName(parsed.invoice.series) ?? null,
+          access_key: parsed.invoice.accessKey,
+          issued_at: new Date(parsed.invoice.issuedAt),
+          // Privacy-first: sem total da nota nem XML cru.
+          neighborhood: normalizeName(location.neighborhood) ?? null,
+          city: normalizeName(location.city) ?? null,
+          state: normalizeName(location.state) ?? null,
+          ibge_code: location.ibgeCode ?? null,
+          items: { createMany: { data: lineItems } },
+        },
+      });
 
-    return {
-      status: 'imported',
-      invoiceId: created.id,
-      accessKey: parsed.invoice.accessKey,
-      // Só informa quando houve linha bloqueada (mantém o payload enxuto).
-      ...(ignoredItems > 0 && { ignoredItems }),
-    };
-  } catch (e) {
-    if (
-      typeof e === 'object' &&
-      e !== null &&
-      'code' in e &&
-      (e as { code: string }).code === P2002
-    ) {
-      return { status: 'duplicated', accessKey: parsed.invoice.accessKey };
+      return {
+        status: 'imported',
+        invoiceId: created.id,
+        accessKey: parsed.invoice.accessKey,
+        // Só informa quando houve linha bloqueada (mantém o payload enxuto).
+        ...(ignoredItems > 0 && { ignoredItems }),
+      };
+    } catch (e) {
+      // Só o P2002 DESTE create é nota duplicada — a unique (user_id, access_key).
+      // Uniques violadas na resolução de empresa/itens não podem virar
+      // "duplicada" falsa; caem no catch externo como erro.
+      if (isUniqueViolation(e)) {
+        return { status: 'duplicated', accessKey: parsed.invoice.accessKey };
+      }
+      throw e;
     }
+  } catch (e) {
     return { status: 'error', message: (e as Error).message };
   }
 }
