@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server';
 import { getSession, isAdmin } from '~/lib/auth/current-user';
 import prisma from '~/lib/prisma';
 import { enforceRateLimit } from '~/lib/rate-limit';
-import { importInvoice } from '~/services/invoice/import';
-import { fetchInvoiceXmlByKey, isInfosimplesEnabled } from '~/services/invoice/infosimples';
+import { importInvoice, importParsedInvoice } from '~/services/invoice/import';
+import { fetchInvoiceByKey, isInfosimplesEnabled } from '~/services/invoice/infosimples';
 
 export const runtime = 'nodejs';
 
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       continue;
     }
 
-    const outcome = await fetchInvoiceXmlByKey(key);
+    const outcome = await fetchInvoiceByKey(key);
     if (outcome.status === 'not_found') {
       results.push({ key, status: 'not_found' });
       continue;
@@ -74,7 +74,11 @@ export async function POST(req: Request) {
       continue;
     }
 
-    const imported = await importInvoice(session.sub, outcome.xml);
+    // NF-e devolve XML; NFC-e só existe como JSON e já vem estruturada.
+    const imported =
+      outcome.status === 'xml'
+        ? await importInvoice(session.sub, outcome.xml)
+        : await importParsedInvoice(session.sub, outcome.parsed);
     if (imported.status === 'imported') {
       results.push({ key, status: 'imported' });
     } else if (imported.status === 'duplicated') {

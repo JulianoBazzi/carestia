@@ -18,6 +18,20 @@ import { validEan } from '~/services/invoice/parser';
 export const PRODUCT_SIMILARITY_THRESHOLD = 0.6;
 
 /**
+ * Limiar para itens SEM código de referência (`reference_code = ''`) — caso da
+ * NFC-e consultada na Infosimples, que não expõe NCM.
+ *
+ * Mais rígido que o normal porque o 0.6 acima só é seguro por causa do NCM: ele
+ * restringe os candidatos a produtos da mesma classe fiscal ANTES da comparação
+ * por nome. No bucket vazio esse filtro não existe e todos os produtos sem
+ * código concorrem entre si, então nomes parecidos de produtos DIFERENTES
+ * ("ERVA TERERE UHDE MENTA" vs "ERVA TERERE UHDE LIMAO" — mesma unidade, mesmo
+ * pack, preço quase igual) passariam. Errar duplicando é reversível pela
+ * mesclagem manual; mesclar errado não é.
+ */
+export const NO_REFERENCE_SIMILARITY_THRESHOLD = 0.85;
+
+/**
  * Fator máximo de diferença de preço para aceitar que dois itens são o MESMO
  * produto. Segundo portão do matching: mesmo com nome parecido, não juntamos um
  * item cujo preço unitário difere mais de 5× da mediana do candidato (evita
@@ -236,9 +250,13 @@ export async function findOrCreateItem(
   // Mesma unidade + nome parecido não basta — "ARROZ 1KG" e "ARROZ 5KG" têm o
   // preço unitário legitimamente diferente e NÃO são o mesmo produto.
   const inputPack = packSize(input.name);
+  // Sem NCM não há pré-filtro por classe fiscal — exige-se mais do nome.
+  const threshold = referenceCode
+    ? PRODUCT_SIMILARITY_THRESHOLD
+    : NO_REFERENCE_SIMILARITY_THRESHOLD;
   const best = rows.find(
     (r) =>
-      Number(r.sim) >= PRODUCT_SIMILARITY_THRESHOLD &&
+      Number(r.sim) >= threshold &&
       packSize(r.name) === inputPack &&
       priceWithinBand(
         input.unitValue,

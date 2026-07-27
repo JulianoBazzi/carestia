@@ -174,10 +174,11 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
               <Input
                 name={field.name}
                 label="Código NCM / referência"
-                placeholder="Ex.: 1006.30.21"
-                required
+                // Sem NCM na NFC-e (Infosimples): o campo fica opcional e pode
+                // ser preenchido depois.
+                placeholder="Ex.: 1006.30.21 (opcional)"
                 disabled={isSubmitting}
-                value={field.state.value}
+                value={field.state.value ?? ''}
                 onChange={(e) => field.handleChange(e.target.value)}
                 onBlur={field.handleBlur}
                 error={field.state.meta.errors[0]?.message}

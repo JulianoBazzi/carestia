@@ -4,7 +4,8 @@ import { zoptional, zrequired } from '~/schemas/lib';
 export const itemSchema = z.object({
   type: z.enum(['product', 'service']),
   name: zrequired(),
-  reference_code: zrequired(),
+  // Opcional: itens vindos de NFC-e não têm NCM (ver `IItemInput`).
+  reference_code: zoptional(),
   category_id: zoptional(),
   unit: zoptional(),
 });

@@ -28,9 +28,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const name = typeof body.name === 'string' ? body.name.trim() : '';
       const reference_code =
         typeof body.reference_code === 'string' ? body.reference_code.trim() : '';
-      if (!type || !name || !reference_code) {
+      // `reference_code` é opcional: itens vindos de NFC-e não têm NCM.
+      if (!type || !name) {
         return NextResponse.json(
-          { message: 'Tipo, nome e código são obrigatórios.' },
+          { message: 'Tipo e nome são obrigatórios.' },
           { status: StatusCodes.BAD_REQUEST },
         );
       }

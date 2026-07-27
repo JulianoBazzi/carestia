@@ -7,3 +7,16 @@ minimumReleaseAgeExclude:
   - '@tanstack/form-core@1.33.1'
   - '@tanstack/react-form@1.33.1'
   - openai@6.47.0
+  - '@types/node@26.1.2'
+  - use-mask-input@3.11.1
+  - '@prisma/adapter-pg@7.9.1'
+  - '@prisma/client-runtime-utils@7.9.1'
+  - '@prisma/client@7.9.1'
+  - '@prisma/config@7.9.1'
+  - '@prisma/debug@7.9.1'
+  - '@prisma/dev@0.24.17'
+  - '@prisma/driver-adapter-utils@7.9.1'
+  - '@prisma/engines@7.9.1'
+  - '@prisma/fetch-engine@7.9.1'
+  - '@prisma/get-platform@7.9.1'
+  - prisma@7.9.1

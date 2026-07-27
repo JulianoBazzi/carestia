@@ -216,6 +216,111 @@ describe('findOrCreateItem — atalho por EAN', () => {
   });
 });
 
+describe('findOrCreateItem — itens sem NCM (NFC-e via Infosimples)', () => {
+  let tx: ReturnType<typeof makeTx>;
+  beforeEach(() => {
+    tx = makeTx();
+  });
+
+  it('exige mais similaridade quando não há NCM para filtrar', async () => {
+    // 0.7 casaria sob o mesmo NCM, mas no bucket vazio o NCM não pré-filtra
+    // nada — produtos diferentes de nome parecido chegariam até aqui.
+    tx.$queryRaw.mockResolvedValue([
+      {
+        id: 'item-limao',
+        name: 'ERVA TERERE UHDE LIMAO 500GR',
+        sim: 0.7,
+        median_price: 9.5,
+        ean: null,
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '',
+      name: 'ERVA TERERE UHDE MENTA BOLDO 500GR',
+      unit: 'UN',
+      ean: null,
+      unitValue: 9.99,
+    });
+
+    expect(id).toBe('novo');
+    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('casa acima de 0.85 mesmo sem NCM', async () => {
+    tx.$queryRaw.mockResolvedValue([
+      {
+        id: 'item-erva',
+        name: 'ERVA TERERE UHDE MENTA BOLDO 500GR',
+        sim: 0.95,
+        median_price: 9.5,
+        ean: null,
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '',
+      name: 'ERVA TERERE UHDE MENTA E BOLDO 500GR',
+      unit: 'UN',
+      ean: null,
+      unitValue: 9.99,
+    });
+
+    expect(id).toBe('item-erva');
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('mantém 0.6 quando HÁ NCM (regressão do caminho XML)', async () => {
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'item-ncm', name: 'OLEO DIESEL S10', sim: 0.7, median_price: 6, ean: null },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'DIESEL B S-10 COMUM',
+      unit: 'L',
+      ean: null,
+      unitValue: 6.2,
+    });
+
+    expect(id).toBe('item-ncm');
+  });
+
+  it('o alias criado pela mesclagem intercepta a reimportação (chave com NCM vazio)', async () => {
+    // Fluxo desenhado: o admin mescla o item da NFC-e no item original; o nome
+    // vira alias com `reference_code = ''` e a próxima importação cai no principal.
+    tx.itemAlias.findUnique.mockResolvedValue({
+      item: { id: 'item-original', deleted_at: null, ignored_at: null },
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '',
+      name: 'ERVA TERERE UHDE MENTA BOLDO - 500GR',
+      unit: 'UN',
+      ean: null,
+      unitValue: 9.99,
+    });
+
+    expect(id).toBe('item-original');
+    expect(tx.itemAlias.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          type_reference_code_name: {
+            type: 'product',
+            reference_code: '',
+            name: 'ERVA TERERE UHDE MENTA BOLDO - 500GR',
+          },
+        },
+      }),
+    );
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+});
+
 describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () => {
   let tx: ReturnType<typeof makeTx>;
   beforeEach(() => {

@@ -81,6 +81,7 @@ async function resolveCompany(dto: ICompanyDTO) {
   return { data: normalized, origin: source };
 }
 
+/** Importa uma nota a partir do XML (NF-e, NFC-e, NF3e). */
 export async function importInvoice(
   userId: string,
   xml: string,
@@ -92,7 +93,19 @@ export async function importInvoice(
   } catch (e) {
     return { status: 'error', message: (e as Error).message };
   }
+  return importParsedInvoice(userId, parsed, seenKeys);
+}
 
+/**
+ * Persiste uma nota JÁ estruturada. Ponto de entrada comum a todas as origens:
+ * o XML chega por `importInvoice` e a NFC-e da Infosimples (que não tem XML)
+ * chega direto daqui, pelo adaptador em `infosimples-nfce.ts`.
+ */
+export async function importParsedInvoice(
+  userId: string,
+  parsed: IParsedInvoice,
+  seenKeys?: Set<string>,
+): Promise<ImportResult> {
   // Beta: por ora importamos apenas produtos (NF-e, NFC-e, NF3e/energia).
   // NFS-e (serviços) fica para uma versão futura.
   if (parsed.invoice.model === 'nfse') {

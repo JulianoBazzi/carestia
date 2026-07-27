@@ -1,0 +1,86 @@
+{
+  "cancelada": false,
+  "emitente": {
+    "cnpj": "05.931.411/0006-29",
+    "endereco": "RUA FERNANDO CORREA DA COSTA, LOJA 01 , 478 , NAO INFORMADO , VILA AURORA , RONDONOPOLIS , MT",
+    "nome_razao_social": "COMPACTA COMERCIAL LTDA"
+  },
+  "informacoes_nota": {
+    "ambiente": "Produção",
+    "chave_acesso": "5126 0705 9314 1100 0629 6552 9000 1984 9314 0071 6910",
+    "data_autorizacao": "26/07/2026",
+    "data_emissao": "26/07/2026",
+    "hora_autorizacao": "13:33:13",
+    "hora_emissao": "13:33:12",
+    "numero": "198493",
+    "protocolo_autorizacao": "151260452928319",
+    "serie": "529",
+    "tipo_emissao": "EMISSÃO NORMAL",
+    "versao_xlst": "2.05",
+    "versao_xml": "4.00"
+  },
+  "mensagem": null,
+  "normalizado_quantidade_total_items": 5.0,
+  "normalizado_valor_a_pagar": 247.56,
+  "produtos": [
+    {
+      "codigo": "543903",
+      "nome": "AGUA MINERAL RONCADOR COPO 200ML - 200ML",
+      "normalizado_quantidade": 1.0,
+      "normalizado_valor_total_produto": 0.69,
+      "normalizado_valor_unitario": 0.69,
+      "quantidade": "1",
+      "unidade": "UN",
+      "valor_total_produto": "0,69",
+      "valor_unitario": "0,69"
+    },
+    {
+      "codigo": "516504",
+      "nome": "ENERG BALY TRAD ZERO LTA - 473ML",
+      "normalizado_quantidade": 1.0,
+      "normalizado_valor_total_produto": 7.29,
+      "normalizado_valor_unitario": 7.29,
+      "quantidade": "1",
+      "unidade": "UN",
+      "valor_total_produto": "7,29",
+      "valor_unitario": "7,29"
+    },
+    {
+      "codigo": "433144",
+      "nome": "ERVA TERERE UHDE MENTA BOLDO - 500GR",
+      "normalizado_quantidade": 1.0,
+      "normalizado_valor_total_produto": 9.99,
+      "normalizado_valor_unitario": 9.99,
+      "quantidade": "1",
+      "unidade": "UN",
+      "valor_total_produto": "9,99",
+      "valor_unitario": "9,99"
+    },
+    {
+      "codigo": "433144",
+      "nome": "ERVA TERERE UHDE MENTA BOLDO - 500GR",
+      "normalizado_quantidade": 1.0,
+      "normalizado_valor_total_produto": 9.99,
+      "normalizado_valor_unitario": 9.99,
+      "quantidade": "1",
+      "unidade": "UN",
+      "valor_total_produto": "9,99",
+      "valor_unitario": "9,99"
+    },
+    {
+      "codigo": "510539",
+      "nome": "CERVEJA MICHELOB ULTRA LTA - 8X350ML",
+      "normalizado_quantidade": 5.0,
+      "normalizado_valor_total_produto": 219.6,
+      "normalizado_valor_unitario": 43.92,
+      "quantidade": "5",
+      "unidade": "CX",
+      "valor_total_produto": "219,60",
+      "valor_unitario": "43,92"
+    }
+  ],
+  "quantidade_total_items": "5",
+  "valor_a_pagar": "247,56",
+  "valor_desconto": null,
+  "valor_total": null
+}

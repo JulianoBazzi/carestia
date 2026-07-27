@@ -51,7 +51,8 @@ JWT via **`jose`** (HS256, expira em 7d), assinado com `AUTH_SECRET`, guardado e
 
 - **BCB SGS 433** (`ipca.ts`) — IPCA mensal, cache 24h; retorna `[]` em falha (degrada para índice só pessoal).
 - **BrasilAPI** (`brasilapi.ts`) — enriquece empresas por CNPJ.
-- **Infosimples** (`invoice/infosimples.ts`) — busca XML da NF por chave de acesso de 44 dígitos; **gated por `INFOSIMPLES_TOKEN` + admin** (sem o token ou não sendo admin, "Importar por chave" fica escondido).
+- **Infosimples** (`invoice/infosimples.ts`) — busca a nota por chave de acesso de 44 dígitos; **gated por `INFOSIMPLES_TOKEN` + admin** (sem o token ou não sendo admin, "Importar por chave" fica escondido). Dois caminhos, decididos pelo modelo nos dígitos 21–22 da chave — e o **nome do parâmetro muda por endpoint**: NF-e (55) usa `sefaz-nfe`/`nfe` e devolve `url_xml` (cai no parser de XML); NFC-e (65) usa `sefaz-nfce`/`nfce` e **não devolve XML** — só o JSON, que passa pelo adaptador `invoice/infosimples-nfce.ts` (schema Zod em `schemas/infosimples.ts`) e entra pelo `importParsedInvoice`.
+  - A NFC-e **não expõe NCM nem GTIN**: esses itens entram no catálogo com `reference_code = ''`. A unificação com o item equivalente vindo de XML é **manual**, pela mesclagem na tela de Itens — o nome da NFC-e vira alias com `reference_code = ''` e as importações seguintes caem no item principal sozinhas. Por isso o matching por similaridade usa `NO_REFERENCE_SIMILARITY_THRESHOLD` (0.85, mais rígido) quando não há NCM para pré-filtrar os candidatos.
 - **OpenAI** (`services/openai.ts`) — categoriza itens (produtos) numa das categorias padrão via structured output; **gated por `OPENAI_API_KEY` + admin**. Degrada para `null` em falha (não quebra o lote).
 - **DANF3e** (`invoice/danfe-*.ts`) — extrai texto de PDFs de conta de energia via `unpdf` (sem OCR; PDFs escaneados retornam parcial).
 

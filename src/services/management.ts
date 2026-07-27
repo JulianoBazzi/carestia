@@ -74,7 +74,13 @@ export async function setItemCategory(itemId: string, categoryId: string | null)
 export interface IItemInput {
   type: 'product' | 'service';
   name: string;
-  reference_code: string;
+  /**
+   * NCM (produto) | cTribNac (serviço). OPCIONAL: a NFC-e consultada na
+   * Infosimples não expõe NCM, e esses itens entram no catálogo com o código
+   * vazio — exigi-lo aqui impediria renomear/categorizar um item importado sem
+   * inventar um NCM. O código continua podendo ser preenchido depois.
+   */
+  reference_code?: string | null;
   category_id?: string | null;
   unit?: string | null;
 }
@@ -82,8 +88,7 @@ export interface IItemInput {
 export function createItem(data: IItemInput) {
   const name = normalizeName(data.name);
   if (!name) throw new BusinessError('Nome obrigatório.');
-  const reference_code = normalizeName(data.reference_code);
-  if (!reference_code) throw new BusinessError('Código de referência obrigatório.');
+  const reference_code = normalizeName(data.reference_code) ?? '';
   return prisma.item.create({
     data: {
       id: newId(),
@@ -99,8 +104,7 @@ export function createItem(data: IItemInput) {
 export async function updateItem(id: string, data: IItemInput): Promise<number> {
   const name = normalizeName(data.name);
   if (!name) throw new BusinessError('Nome obrigatório.');
-  const reference_code = normalizeName(data.reference_code);
-  if (!reference_code) throw new BusinessError('Código de referência obrigatório.');
+  const reference_code = normalizeName(data.reference_code) ?? '';
   const result = await prisma.item.updateMany({
     where: { id, deleted_at: null },
     data: {
