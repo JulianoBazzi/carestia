@@ -1,5 +1,10 @@
 import { isValidCNPJ, onlyNumbers } from '@julianobazzi/utils';
 import axios from 'axios';
+import { cacheGetJson, cacheSetJson } from '~/lib/redis';
+
+// CNPJ é dado externo semi-estático; cachear evita a chamada ao BrasilAPI (que
+// custava até ~8s por nota na importação). TTL longo — muda raramente.
+const CNPJ_CACHE_TTL = 7 * 24 * 60 * 60; // 7 dias
 
 export interface IBrasilApiCnpj {
   cnpj: string;
@@ -25,8 +30,17 @@ const client = axios.create({
 export async function fetchCnpj(cnpj: string): Promise<IBrasilApiCnpj | null> {
   const digits = onlyNumbers(cnpj);
   if (!isValidCNPJ(digits)) return null;
+
+  const cacheKey = `cnpj:${digits}`;
+  const cached = await cacheGetJson<IBrasilApiCnpj>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   try {
     const { data } = await client.get<IBrasilApiCnpj>(`/cnpj/v1/${digits}`);
+    // Só sucesso é cacheado — falhas devem ser retentadas no próximo import.
+    await cacheSetJson(cacheKey, data, CNPJ_CACHE_TTL);
     return data;
   } catch {
     return null;

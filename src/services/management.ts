@@ -4,7 +4,20 @@ import { BusinessError } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { normalizeName, slugify } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { cacheDel } from '~/lib/redis';
 import { normalizeUnit } from '~/lib/units';
+
+// Invalida o cache de empresa (chave por documento) usado no import. Como as
+// mutações vêm por id, buscamos o documento antes de remover a chave.
+async function invalidateCompanyCache(id: string): Promise<void> {
+  const company = await prisma.company.findUnique({
+    where: { id },
+    select: { document: true },
+  });
+  if (company) {
+    await cacheDel(`company:${company.document}`);
+  }
+}
 
 export function listCategories() {
   return prisma.category.findMany({
@@ -298,6 +311,9 @@ export async function updateCompany(id: string, data: ICompanyUpdate): Promise<n
     where: { id, deleted_at: null },
     data: normalizeCompanyData(data),
   });
+  if (result.count > 0) {
+    await invalidateCompanyCache(id);
+  }
   return result.count;
 }
 
@@ -329,5 +345,8 @@ export async function deleteCompany(id: string): Promise<number> {
     where: { id, deleted_at: null },
     data: { deleted_at: new Date() },
   });
+  if (result.count > 0) {
+    await invalidateCompanyCache(id);
+  }
   return result.count;
 }

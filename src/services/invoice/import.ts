@@ -3,6 +3,7 @@ import { isUniqueViolation } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { cacheGetJson, cacheSetJson } from '~/lib/redis';
 import { normalizeUnit } from '~/lib/units';
 import { fetchCnpj } from '~/services/brasilapi';
 import { findOrCreateItem } from '~/services/invoice/item-matching';
@@ -22,6 +23,21 @@ export type ImportResult =
 // a importação e não esgotar o pool de conexões (~3 requests × 5 ≈ 15 ≤ 20).
 const ITEM_MATCH_CONCURRENCY = 5;
 
+// Cache da empresa por documento: pula o findUnique no ramo sem localização.
+// Invalidado em updateCompany/deleteCompany (management.ts). TTL curto porque
+// empresa muda raramente e o pior caso é reusar localização levemente antiga.
+const COMPANY_CACHE_TTL = 24 * 60 * 60; // 24h
+const companyCacheKey = (document: string) => `company:${document}`;
+
+interface ICachedCompany {
+  social_name: string;
+  fantasy_name: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+  ibge_code: string | null;
+}
+
 /** Mescla dados da empresa do XML com o banco/BrasilAPI (preenche lacunas). */
 async function resolveCompany(dto: ICompanyDTO) {
   // Privacy-first: só bairro/cidade/UF (índice regional) — sem rua/número/CEP.
@@ -31,18 +47,21 @@ async function resolveCompany(dto: ICompanyDTO) {
 
   if (!hasLocation) {
     // Empresa já conhecida com localização dispensa a BrasilAPI (que custava
-    // até 8s por nota em lotes cujo XML não traz endereço do emitente).
-    const known = await prisma.company.findUnique({
-      where: { document: dto.document },
-      select: {
-        social_name: true,
-        fantasy_name: true,
-        neighborhood: true,
-        city: true,
-        state: true,
-        ibge_code: true,
-      },
-    });
+    // até 8s por nota em lotes cujo XML não traz endereço do emitente). O cache
+    // Redis evita até o findUnique em reimportações do mesmo emitente.
+    const known =
+      (await cacheGetJson<ICachedCompany>(companyCacheKey(dto.document))) ??
+      (await prisma.company.findUnique({
+        where: { document: dto.document },
+        select: {
+          social_name: true,
+          fantasy_name: true,
+          neighborhood: true,
+          city: true,
+          state: true,
+          ibge_code: true,
+        },
+      }));
     if (known?.city && known.state) {
       data = {
         ...data,
@@ -149,6 +168,21 @@ export async function importParsedInvoice(
         fantasy_name: companyData.fantasyName,
       },
     });
+
+    // Write-through: próximas notas do mesmo emitente resolvem a localização
+    // pelo cache, sem findUnique nem BrasilAPI.
+    await cacheSetJson(
+      companyCacheKey(company.document),
+      {
+        social_name: company.social_name,
+        fantasy_name: company.fantasy_name,
+        neighborhood: company.neighborhood,
+        city: company.city,
+        state: company.state,
+        ibge_code: company.ibge_code,
+      } satisfies ICachedCompany,
+      COMPANY_CACHE_TTL,
+    );
 
     // Identidades repetidas na mesma nota (mesmo produto em mais de uma linha)
     // resolvem uma vez só e as demais linhas reusam o resultado. A resolução

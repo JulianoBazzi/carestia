@@ -28,6 +28,7 @@ Gerenciador de pacotes é **pnpm** (não use npm/yarn). `postinstall` roda `pris
 
 - **Import alias:** sempre importe via `~/` (mapeia para `src/`). Nunca use `./` ou `../` para caminhos internos. Ex.: `import { prisma } from '~/lib/prisma'`.
 - **Formatação (Biome):** aspas **simples**, `;` sempre, indentação de 2 espaços, `lineWidth` 100. Rode `pnpm format` antes de finalizar. Não altere o estilo de aspas de um arquivo manualmente — deixe o Biome cuidar disso.
+- **Chaves no `if`:** sempre use bloco com chaves, mesmo em uma linha. Nunca `if (x) return y;` — escreva `if (x) {\n  return y;\n}`. Vale para `else`/`for`/`while` também.
 - **IDs:** ULID (`VarChar(26)`), gerados em `~/lib/id.ts`.
 - **Soft delete:** entidades usam `deleted_at`; filtre registros removidos nas queries.
 - **Validação:** schemas Zod em `src/schemas/`.
