@@ -1,6 +1,6 @@
 'use client';
 
-import { Circle, Flex, Heading, HStack, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { Flex, Heading, HStack, Input, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
@@ -16,6 +16,7 @@ import { CategoryModal, type CategoryModalHandle } from '~/app/categories/compon
 import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { ActionIconButton } from '~/components/Button/IconButton';
+import { CategoryIcon } from '~/components/CategoryIcon';
 import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/ConfirmDialog';
 import { type CustomColumnDef, TableWithService } from '~/components/Form/TableWithService';
 import { StatCard } from '~/components/StatCard';
@@ -70,9 +71,7 @@ export function CategoriesCard({ canManage }: CategoriesCardProps) {
         header: 'Categoria',
         cell: ({ row }) => (
           <HStack gap="2.5">
-            <Circle size="8" bg="teal.50" color="teal.600" _dark={{ bg: 'teal.950' }}>
-              <LuFolderTree size={15} />
-            </Circle>
+            <CategoryIcon icon={row.original.icon} color={row.original.color} />
             <Text fontWeight="medium">{row.original.name}</Text>
           </HStack>
         ),

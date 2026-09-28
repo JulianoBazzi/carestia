@@ -132,6 +132,13 @@ describe('parseInfosimplesNfce', () => {
     }
   });
 
+  it('deixa o item sem tributo aproximado (o JSON da Infosimples não traz tributos)', () => {
+    const parsed = parseInfosimplesNfce(fixture());
+    for (const item of parsed.items) {
+      expect(item.unitTaxValue).toBeUndefined();
+    }
+  });
+
   it('mantém as linhas repetidas (o dedupe é do importInvoice)', () => {
     const parsed = parseInfosimplesNfce(fixture());
     const erva = parsed.items.filter((i) => i.name.startsWith('ERVA TERERE'));

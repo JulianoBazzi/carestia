@@ -19,6 +19,8 @@ CREATE TABLE "categories" (
     "name" VARCHAR(255) NOT NULL,
     "slug" VARCHAR(255) NOT NULL,
     "active" BOOLEAN NOT NULL DEFAULT true,
+    "icon" VARCHAR(40),
+    "color" VARCHAR(20),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
     "deleted_at" TIMESTAMPTZ,
@@ -117,10 +119,29 @@ CREATE TABLE "invoice_items" (
     "item_id" VARCHAR(26) NOT NULL,
     "description" VARCHAR(255) NOT NULL,
     "unit" VARCHAR(10),
-    "unit_value" DECIMAL(14,2) NOT NULL,
+    "unit_value" DECIMAL(14,4) NOT NULL,
+    "unit_tax_value" DECIMAL(14,4),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "invoice_items_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "price_observations" (
+    "id" VARCHAR(26) NOT NULL,
+    "user_id" VARCHAR(26) NOT NULL,
+    "item_id" VARCHAR(26) NOT NULL,
+    "unit_value" DECIMAL(14,4) NOT NULL,
+    "unit" VARCHAR(10),
+    "source" VARCHAR(20) NOT NULL,
+    "observed_at" TIMESTAMPTZ NOT NULL,
+    "city" VARCHAR(255),
+    "state" VARCHAR(2),
+    "ibge_code" VARCHAR(7),
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deleted_at" TIMESTAMPTZ,
+
+    CONSTRAINT "price_observations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -183,6 +204,18 @@ CREATE INDEX "invoice_items_invoice_id_idx" ON "invoice_items"("invoice_id");
 -- CreateIndex
 CREATE INDEX "invoice_items_item_id_idx" ON "invoice_items"("item_id");
 
+-- CreateIndex
+CREATE INDEX "price_observations_item_id_idx" ON "price_observations"("item_id");
+
+-- CreateIndex
+CREATE INDEX "price_observations_user_id_idx" ON "price_observations"("user_id");
+
+-- CreateIndex
+CREATE INDEX "price_observations_state_idx" ON "price_observations"("state");
+
+-- CreateIndex
+CREATE INDEX "price_observations_deleted_at_idx" ON "price_observations"("deleted_at");
+
 -- AddForeignKey
 ALTER TABLE "items" ADD CONSTRAINT "items_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
@@ -200,4 +233,10 @@ ALTER TABLE "invoice_items" ADD CONSTRAINT "invoice_items_invoice_id_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "invoice_items" ADD CONSTRAINT "invoice_items_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "price_observations" ADD CONSTRAINT "price_observations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "price_observations" ADD CONSTRAINT "price_observations_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

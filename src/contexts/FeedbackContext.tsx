@@ -3,6 +3,7 @@
 import type { AxiosError } from 'axios';
 import { createContext, type ReactNode, useContext } from 'react';
 import { toaster } from '~/components/ui/toaster';
+import { SESSION_EXPIRED_MESSAGE } from '~/lib/api-error';
 
 interface IFeedbackProviderProps {
   children: ReactNode;
@@ -46,9 +47,14 @@ export function FeedbackProvider({ children }: IFeedbackProviderProps) {
 
   // biome-ignore lint/suspicious/noExplicitAny: erro pode vir de várias fontes
   function errorFeedbackToast(title: string, error: any): void {
-    const axiosError = error as AxiosError<{ message?: string }>;
+    const axiosError = error as AxiosError<{ message?: string; error?: string }>;
     if (axiosError?.response) {
-      const message = axiosError.response.data?.message;
+      if (axiosError.response.status === 401) {
+        warningFeedbackToast(title, SESSION_EXPIRED_MESSAGE);
+        return;
+      }
+      // As rotas respondem com `message` ou `error` (legado).
+      const message = axiosError.response.data?.message ?? axiosError.response.data?.error;
       if (axiosError.response.status >= 500) {
         dangerFeedbackToast(title, message ?? 'Erro no servidor.');
       } else {

@@ -2,7 +2,9 @@ import { removeAccents } from '@julianobazzi/utils';
 
 /** UPPERCASE + sem acento + trim. Usado em nomes de cadastro. */
 export function normalizeName(value?: string | null): string | undefined {
-  if (!value) return undefined;
+  if (!value) {
+    return undefined;
+  }
   const out = removeAccents(String(value)).toUpperCase().replace(/\s+/g, ' ').trim();
   return out || undefined;
 }
@@ -25,7 +27,9 @@ export function toUpperLive(value: string): string {
  */
 export function matchKey(value?: string | null): string {
   const n = normalizeName(value);
-  if (!n) return '';
+  if (!n) {
+    return '';
+  }
   return n
     .replace(/[^A-Z0-9 ]/g, '')
     .replace(/\s+/g, ' ')

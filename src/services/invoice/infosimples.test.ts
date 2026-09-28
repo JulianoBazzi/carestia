@@ -64,7 +64,9 @@ describe('fetchInvoiceByKey', () => {
     const outcome = await fetchInvoiceByKey(NFCE_KEY);
 
     expect(outcome.status).toBe('parsed');
-    if (outcome.status !== 'parsed') return;
+    if (outcome.status !== 'parsed') {
+      return;
+    }
     expect(outcome.parsed.invoice.model).toBe('nfce');
     expect(outcome.parsed.company.document).toBe('05931411000629');
     expect(outcome.parsed.items).toHaveLength(5);

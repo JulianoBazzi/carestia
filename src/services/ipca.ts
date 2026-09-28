@@ -1,3 +1,8 @@
+import { toDateInputValue } from '~/lib/format';
+
+/** BCB lento não pode segurar o /api/inflation: sem resposta, degrada para []. */
+const FETCH_TIMEOUT_MS = 5000;
+
 export interface IIpcaPoint {
   month: string; // "YYYY-MM"
   pct: number; // variação mensal em % (0.58 = 0,58%)
@@ -8,10 +13,10 @@ interface IBcbRow {
   valor: string;
 }
 
+/** Data → "DD/MM/YYYY" (formato do SGS), no fuso de Brasília. */
 function fmt(date: Date): string {
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${d}/${m}/${date.getUTCFullYear()}`;
+  const [y, m, d] = toDateInputValue(date).split('-');
+  return `${d}/${m}/${y}`;
 }
 
 /**
@@ -21,8 +26,13 @@ function fmt(date: Date): string {
 export async function fetchIpca(from: Date, to: Date): Promise<IIpcaPoint[]> {
   const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados?formato=json&dataInicial=${fmt(from)}&dataFinal=${fmt(to)}`;
   try {
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return [];
+    const res = await fetch(url, {
+      next: { revalidate: 86400 },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      return [];
+    }
     const rows = (await res.json()) as IBcbRow[];
     return rows.map((r) => {
       const [, month, year] = r.data.split('/');

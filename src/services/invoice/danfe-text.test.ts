@@ -33,6 +33,11 @@ describe('extractDanfeFields (DANF3e)', () => {
     expect(d.unitPriceKwh).toBeCloseTo(1.19408);
   });
 
+  it('lê tarifa com ponto decimal (sem vírgula) sem multiplicar', () => {
+    const dot = extractDanfeFields(sample.replace('1,194080', '0.712345'));
+    expect(dot.unitPriceKwh).toBeCloseTo(0.712345);
+  });
+
   it('extrai consumo e total crus', () => {
     expect(d.raw.consumoKwh).toBe('250');
     expect(d.raw.total).toBe('301,02');

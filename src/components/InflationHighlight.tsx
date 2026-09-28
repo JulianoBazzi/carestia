@@ -4,8 +4,12 @@ import { formatPct } from '~/lib/format';
 import type { IInflation } from '~/services/invoice/analytics';
 
 function variationColor(pct: number) {
-  if (pct > 0) return 'red';
-  if (pct < 0) return 'green';
+  if (pct > 0) {
+    return 'red';
+  }
+  if (pct < 0) {
+    return 'green';
+  }
   return 'gray';
 }
 

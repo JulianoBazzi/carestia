@@ -11,10 +11,12 @@ import { useInflation } from '~/services/hooks/useInflation';
 import type { ItemKind } from '~/services/invoice/analytics';
 
 function typeBadge(type: ItemKind) {
-  if (type === 'energy')
+  if (type === 'energy') {
     return <StatusBadge withDot={false} label="Energia" colorPalette="energy" />;
-  if (type === 'service')
+  }
+  if (type === 'service') {
     return <StatusBadge withDot={false} label="Serviço" colorPalette="purple" />;
+  }
   return <StatusBadge withDot={false} label="Produto" colorPalette="blue" />;
 }
 

@@ -54,7 +54,14 @@ export function extractDanfeFields(text: string): IDanfeDraft {
   const tarifa =
     flat.match(/(\d+[.,]\d{4,6})\s*(?:R?\$?\s*\/?\s*)?kWh/i) ??
     flat.match(/kWh\D{0,20}(\d+[.,]\d{4,6})/i);
-  const unitPriceKwh = tarifa ? Number(tarifa[1].replace(/\./g, '').replace(',', '.')) : undefined;
+  // Com vírgula, o ponto é milhar ("1.234,567890"); sem vírgula, o ponto já é o
+  // decimal ("0.712345") — remover o ponto aí leria a tarifa 1.000.000× maior.
+  const tarifaText = tarifa?.[1];
+  const unitPriceKwh = tarifaText
+    ? Number(
+        tarifaText.includes(',') ? tarifaText.replace(/\./g, '').replace(',', '.') : tarifaText,
+      )
+    : undefined;
 
   const consumo = flat.match(/consumo\D{0,20}(\d[\d.]*),?\d*\s*kWh/i);
   const total = flat.match(

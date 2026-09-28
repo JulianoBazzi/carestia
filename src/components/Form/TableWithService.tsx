@@ -110,16 +110,22 @@ export function TableWithService<T extends IEntityBase, P extends IParamsRequest
   function getIsSorted(columnId: string): false | SortDirection {
     const sortField = getSortByField(columnId);
     const current = sorting.find((s) => s.id === sortField);
-    if (!current) return false;
+    if (!current) {
+      return false;
+    }
     return current.desc ? 'desc' : 'asc';
   }
 
   function toggleSort(columnId: string) {
     const sortId = getSortByField(columnId);
     const current = sorting.find((s) => s.id === sortId);
-    if (!current) setSorting([{ id: sortId, desc: false }]);
-    else if (!current.desc) setSorting([{ id: sortId, desc: true }]);
-    else setSorting([]);
+    if (!current) {
+      setSorting([{ id: sortId, desc: false }]);
+    } else if (!current.desc) {
+      setSorting([{ id: sortId, desc: true }]);
+    } else {
+      setSorting([]);
+    }
   }
 
   const totalRecords = data?.meta.total ?? 0;

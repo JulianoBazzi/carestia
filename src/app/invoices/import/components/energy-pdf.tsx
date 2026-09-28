@@ -36,7 +36,9 @@ export function EnergyPdfImport() {
       errorFeedbackToast('Conta de energia', e as Error);
     } finally {
       setLoading(false);
-      if (inputRef.current) inputRef.current.value = '';
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
     }
   }
 
@@ -68,7 +70,9 @@ export function EnergyPdfImport() {
           hidden
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) onFile(f);
+            if (f) {
+              onFile(f);
+            }
           }}
         />
       </Card.Body>

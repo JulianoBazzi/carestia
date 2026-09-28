@@ -34,7 +34,9 @@ export function isInfosimplesEnabled(): boolean {
  * consulta falhar antes de qualquer coisa.
  */
 function consultaForKey(key: string): { endpoint: string; param: 'nfe' | 'nfce' } {
-  if (key.slice(20, 22) === '65') return { endpoint: 'sefaz-nfce', param: 'nfce' };
+  if (key.slice(20, 22) === '65') {
+    return { endpoint: 'sefaz-nfce', param: 'nfce' };
+  }
   // NFS-e não usa chave de 44 dígitos no mesmo formato; mantém NF-e como padrão.
   return { endpoint: 'sefaz-nfe', param: 'nfe' };
 }

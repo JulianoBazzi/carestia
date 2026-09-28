@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest';
-import { __resetRateLimit, enforceRateLimit } from '~/lib/rate-limit';
+import {
+  __resetRateLimit,
+  checkRateLimit,
+  clientIp,
+  enforceRateLimit,
+  refundRateLimit,
+} from '~/lib/rate-limit';
 
 const WINDOW_MS = 60 * 60 * 1000;
 
@@ -50,5 +56,76 @@ describe('enforceRateLimit', () => {
     expect(enforceRateLimit(makeRequest(), 'test', 2, WINDOW_MS, { type: 'user' })?.status).toBe(
       429,
     );
+  });
+});
+
+describe('enforceRateLimit por usuário', () => {
+  beforeEach(() => {
+    __resetRateLimit();
+  });
+
+  it('isola a cota por conta, mesmo em IPs diferentes', () => {
+    const alice = { type: 'user', sub: 'alice' };
+    const bob = { type: 'user', sub: 'bob' };
+    const opts = { by: 'user' as const };
+    expect(enforceRateLimit(makeRequest('1.1.1.1'), 't', 1, WINDOW_MS, alice, opts)).toBeNull();
+    // Mesma conta em outro IP: cota já consumida.
+    expect(enforceRateLimit(makeRequest('2.2.2.2'), 't', 1, WINDOW_MS, alice, opts)?.status).toBe(
+      429,
+    );
+    // Outra conta no mesmo IP: cota própria.
+    expect(enforceRateLimit(makeRequest('1.1.1.1'), 't', 1, WINDOW_MS, bob, opts)).toBeNull();
+  });
+
+  it('cai para o IP quando a sessão não tem sub', () => {
+    const opts = { by: 'user' as const };
+    expect(enforceRateLimit(makeRequest(), 't', 1, WINDOW_MS, { type: 'user' }, opts)).toBeNull();
+    expect(enforceRateLimit(makeRequest(), 't', 1, WINDOW_MS, { type: 'user' }, opts)?.status).toBe(
+      429,
+    );
+  });
+
+  it('desconta `cost` unidades e recusa sem consumir quando não cabe', () => {
+    const user = { type: 'user', sub: 'u1' };
+    expect(
+      enforceRateLimit(makeRequest(), 't', 5, WINDOW_MS, user, { by: 'user', cost: 3 }),
+    ).toBeNull();
+    // 3 + 3 > 5 → recusa, mas não consome.
+    expect(
+      enforceRateLimit(makeRequest(), 't', 5, WINDOW_MS, user, { by: 'user', cost: 3 })?.status,
+    ).toBe(429);
+    // Ainda cabem 2.
+    expect(
+      enforceRateLimit(makeRequest(), 't', 5, WINDOW_MS, user, { by: 'user', cost: 2 }),
+    ).toBeNull();
+  });
+});
+
+describe('clientIp', () => {
+  it('usa o IP anexado pelo proxy (mais à direita), não o forjável da esquerda', () => {
+    const req = makeRequest('1.2.3.4, 203.0.113.9');
+    expect(clientIp(req)).toBe('203.0.113.9');
+  });
+
+  it('trocar o X-Forwarded-For forjado não zera o limite', () => {
+    __resetRateLimit();
+    for (let i = 0; i < 2; i++) {
+      expect(
+        enforceRateLimit(makeRequest(`9.9.9.${i}, 203.0.113.9`), 'spoof', 2, WINDOW_MS),
+      ).toBeNull();
+    }
+    expect(
+      enforceRateLimit(makeRequest('7.7.7.7, 203.0.113.9'), 'spoof', 2, WINDOW_MS),
+    ).not.toBeNull();
+  });
+});
+
+describe('refundRateLimit', () => {
+  it('devolve unidades debitadas', () => {
+    __resetRateLimit();
+    expect(checkRateLimit('k', 2, WINDOW_MS, 2).ok).toBe(true);
+    expect(checkRateLimit('k', 2, WINDOW_MS).ok).toBe(false);
+    refundRateLimit('k', 1);
+    expect(checkRateLimit('k', 2, WINDOW_MS).ok).toBe(true);
   });
 });

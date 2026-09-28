@@ -18,29 +18,23 @@ import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import {
   API_URL_INVOICES,
-  TABLE_DASHBOARD_METRICS,
+  TABLE_COMPANIES,
   TABLE_INFLATION,
   TABLE_INVOICES,
+  TABLE_ITEMS,
+  TABLE_PUBLIC_PRICES,
 } from '~/config/constants';
 import { api } from '~/services/apiClient';
+import { type KeyImportUiStatus, keyImportStatusInfo } from '~/services/hooks/useInvoices';
 import { queryClient } from '~/services/queryClient';
 
-type KeyStatus = 'queued' | 'consulting' | 'imported' | 'duplicated' | 'not_found' | 'error';
+type KeyStatus = KeyImportUiStatus;
 
 interface IKeyItem {
   key: string;
   status: KeyStatus;
   message?: string;
 }
-
-const BADGE: Record<KeyStatus, { label: string; colorPalette: string }> = {
-  queued: { label: 'Aguardando', colorPalette: 'gray' },
-  consulting: { label: 'Consultando', colorPalette: 'blue' },
-  imported: { label: 'Importada', colorPalette: 'teal' },
-  duplicated: { label: 'Já importada', colorPalette: 'gray' },
-  not_found: { label: 'Não encontrada', colorPalette: 'orange' },
-  error: { label: 'Erro', colorPalette: 'red' },
-};
 
 function extractKeys(text: string): string[] {
   const matches = text.match(/\d{44}/g) ?? [];
@@ -61,7 +55,9 @@ export function InvoiceImportKey({ enabled }: { enabled: boolean }) {
 
   async function run() {
     const keys = extractKeys(text);
-    if (keys.length === 0 || !enabled) return;
+    if (keys.length === 0 || !enabled) {
+      return;
+    }
 
     const queued: IKeyItem[] = keys.map((key) => ({ key, status: 'queued' }));
     setItems(queued);
@@ -92,8 +88,11 @@ export function InvoiceImportKey({ enabled }: { enabled: boolean }) {
     setRunning(false);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [TABLE_INVOICES] }),
-      queryClient.invalidateQueries({ queryKey: [TABLE_DASHBOARD_METRICS] }),
       queryClient.invalidateQueries({ queryKey: [TABLE_INFLATION] }),
+      // A importação cria itens/empresas no catálogo global e novas amostras.
+      queryClient.invalidateQueries({ queryKey: [TABLE_ITEMS] }),
+      queryClient.invalidateQueries({ queryKey: [TABLE_COMPANIES] }),
+      queryClient.invalidateQueries({ queryKey: [TABLE_PUBLIC_PRICES] }),
     ]);
   }
 
@@ -200,8 +199,8 @@ export function InvoiceImportKey({ enabled }: { enabled: boolean }) {
                     </Stack>
                     <StatusBadge
                       withDot={false}
-                      label={BADGE[item.status].label}
-                      colorPalette={BADGE[item.status].colorPalette}
+                      label={keyImportStatusInfo(item.status).label}
+                      colorPalette={keyImportStatusInfo(item.status).colorPalette}
                     />
                   </Flex>
                 ))}

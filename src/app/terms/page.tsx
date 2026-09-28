@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { LegalLayout, LegalSection } from '~/components/public/LegalLayout';
 
+// Dinâmica: REGISTRATION_OPEN é lido em runtime (estática, a flag congelaria no build).
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = { title: 'Termos de Uso' };
 
 export default function TermosPage() {

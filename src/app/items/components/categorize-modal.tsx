@@ -55,7 +55,9 @@ export function CategorizeModal({ ref }: { ref?: Ref<CategorizeModalHandle> }) {
   const runningRef = useRef(false);
 
   const start = useCallback(async () => {
-    if (runningRef.current) return;
+    if (runningRef.current) {
+      return;
+    }
     runningRef.current = true;
     stopRef.current = false;
     setRunning(true);
@@ -76,7 +78,9 @@ export function CategorizeModal({ ref }: { ref?: Ref<CategorizeModalHandle> }) {
           setTotal(known);
         }
         setResults((prev) => [...prev, ...r.results]);
-        if (r.processed === 0 || r.remaining === 0) break;
+        if (r.processed === 0 || r.remaining === 0) {
+          break;
+        }
       }
     } catch (e) {
       const message =
@@ -123,8 +127,12 @@ export function CategorizeModal({ ref }: { ref?: Ref<CategorizeModalHandle> }) {
       open={open}
       onOpenChange={(d) => {
         // Não deixa fechar enquanto processa (usar "Parar").
-        if (running) return;
-        if (!d.open) close();
+        if (running) {
+          return;
+        }
+        if (!d.open) {
+          close();
+        }
       }}
       placement="center"
       closeOnInteractOutside={!running}
@@ -133,7 +141,7 @@ export function CategorizeModal({ ref }: { ref?: Ref<CategorizeModalHandle> }) {
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxW="lg">
+          <Dialog.Content maxW="2xl">
             <Dialog.Header>
               <HStack gap="3">
                 <Circle
@@ -178,7 +186,7 @@ export function CategorizeModal({ ref }: { ref?: Ref<CategorizeModalHandle> }) {
                   </Progress.Root>
                 </Stack>
 
-                <SimpleGrid columns={3} gap="3">
+                <SimpleGrid columns={{ base: 1, sm: 3 }} gap="3">
                   <StatCard
                     label="Categorizados"
                     value={categorized}

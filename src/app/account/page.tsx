@@ -7,7 +7,9 @@ export const metadata = { title: 'Minha conta' };
 
 export default async function AccountPage() {
   const session = await getSession();
-  if (!session) redirect('/login');
+  if (!session) {
+    redirect('/login');
+  }
 
   return (
     <Template>

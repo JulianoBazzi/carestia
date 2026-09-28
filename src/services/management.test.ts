@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
     invoiceItem: { updateMany: vi.fn() },
+    priceObservation: { updateMany: vi.fn() },
     item: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -24,6 +25,7 @@ import { createItem, ignoreItem, mergeItems } from '~/services/management';
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.invoiceItem.updateMany.mockReturnValue('reassign-op');
+  prismaMock.priceObservation.updateMany.mockReturnValue('reassign-obs-op');
   prismaMock.item.findFirst.mockResolvedValue({ id: 'target-1', ean: null, nbs_code: null });
   prismaMock.item.findUnique.mockResolvedValue({
     type: 'product',
@@ -118,6 +120,11 @@ describe('mergeItems', () => {
       where: { item_id: 'source-1' },
       data: { item_id: 'target-1' },
     });
+    // Observações de preço (etiquetas) também migram para o target.
+    expect(prismaMock.priceObservation.updateMany).toHaveBeenCalledWith({
+      where: { item_id: 'source-1' },
+      data: { item_id: 'target-1' },
+    });
     // A identidade do source vira alias do target (o merge mais recente vence
     // se a chave já existir).
     expect(prismaMock.itemAlias.upsert).toHaveBeenCalledWith({
@@ -150,6 +157,7 @@ describe('mergeItems', () => {
     // Todas as operações vão juntas na mesma transação (sem backfill: source sem EAN/NBS).
     expect(prismaMock.$transaction).toHaveBeenCalledWith([
       'reassign-op',
+      'reassign-obs-op',
       'alias-move-op',
       'alias-upsert-op',
       'delete-op',

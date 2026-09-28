@@ -1,6 +1,6 @@
 'use client';
 
-import { Dialog, Field, SegmentGroup, Stack } from '@chakra-ui/react';
+import { Dialog, Stack } from '@chakra-ui/react';
 import { useBeforeUnload } from '@julianobazzi/nextjs-utils';
 import { revalidateLogic, useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import { useSelector } from '@tanstack/react-store';
 import { type Ref, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { SecondaryButton } from '~/components/Button/Base/SecondaryButton';
+import { formatCategoryOption, toCategoryOptions } from '~/components/Form/CategorySelectOption';
 import { Modal, type ModalHandle } from '~/components/Form/Modal';
 import { Select } from '~/components/Form/Select';
 import { Input } from '~/components/Input';
@@ -24,15 +25,25 @@ export type ItemModalHandle = {
   onOpenDialog: (item?: IItemAPI) => void;
 };
 
+// `type` é fixo em 'product' (sem campo na UI, e a API trava o valor): neste
+// momento o cadastro manual só cria produtos. Editar um item não altera o tipo.
 const EMPTY: ItemFormInput = {
   type: 'product',
   name: '',
   reference_code: '',
+  ean: '',
   category_id: '',
   unit: '',
 };
 
-export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
+export function ItemModal({
+  ref,
+  canEditEan,
+}: {
+  ref?: Ref<ItemModalHandle>;
+  /** EAN é só-admin: o servidor ignora o campo para os demais usuários. */
+  canEditEan: boolean;
+}) {
   const modalRef = useRef<ModalHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [editing, setEditing] = useState<IItemAPI | undefined>();
@@ -45,10 +56,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
     sortedBy: OrderByTypeEnum.Asc,
   });
   const categories = categoriesQuery.data?.data ?? [];
-  const categoryOptions = useMemo(
-    () => categories.map((c) => ({ value: c.id, label: c.name })),
-    [categories],
-  );
+  const categoryOptions = useMemo(() => toCategoryOptions(categories), [categories]);
 
   const mutation = useMutation({
     mutationFn: async (data: ItemData) => {
@@ -73,9 +81,10 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
     () =>
       editing
         ? {
-            type: editing.type,
+            type: 'product',
             name: editing.name,
             reference_code: editing.reference_code,
+            ean: editing.ean ?? '',
             category_id: editing.category_id ?? '',
             unit: editing.unit ?? '',
           }
@@ -103,9 +112,10 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
         form.reset(
           item
             ? {
-                type: item.type,
+                type: 'product',
                 name: item.name,
                 reference_code: item.reference_code,
+                ean: item.ean ?? '',
                 category_id: item.category_id ?? '',
                 unit: item.unit ?? '',
               }
@@ -127,32 +137,6 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
     >
       <Dialog.Body>
         <Stack gap="4">
-          <form.Field name="type">
-            {(field) => (
-              <Field.Root>
-                <Field.Label>Tipo</Field.Label>
-                <SegmentGroup.Root
-                  value={field.state.value}
-                  onValueChange={(e) =>
-                    field.handleChange((e.value as 'product' | 'service') ?? 'product')
-                  }
-                  disabled={isSubmitting}
-                  width="full"
-                >
-                  <SegmentGroup.Indicator />
-                  <SegmentGroup.Item value="product" flex="1" justifyContent="center">
-                    <SegmentGroup.ItemText>Produto</SegmentGroup.ItemText>
-                    <SegmentGroup.ItemHiddenInput />
-                  </SegmentGroup.Item>
-                  <SegmentGroup.Item value="service" flex="1" justifyContent="center">
-                    <SegmentGroup.ItemText>Serviço</SegmentGroup.ItemText>
-                    <SegmentGroup.ItemHiddenInput />
-                  </SegmentGroup.Item>
-                </SegmentGroup.Root>
-              </Field.Root>
-            )}
-          </form.Field>
-
           <form.Field name="name">
             {(field) => (
               <Input
@@ -186,6 +170,23 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
             )}
           </form.Field>
 
+          <form.Field name="ean">
+            {(field) => (
+              <Input
+                name={field.name}
+                label="Código de barras (EAN/GTIN)"
+                placeholder="Ex.: 7891234567895 (opcional)"
+                inputMode="numeric"
+                maxLength={14}
+                disabled={isSubmitting || !canEditEan}
+                value={field.state.value ?? ''}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+                error={field.state.meta.errors[0]?.message}
+              />
+            )}
+          </form.Field>
+
           <form.Field name="category_id">
             {(field) => (
               <Select
@@ -196,6 +197,7 @@ export function ItemModal({ ref }: { ref?: Ref<ItemModalHandle> }) {
                 disabled={isSubmitting}
                 loading={categoriesQuery.isLoading}
                 options={categoryOptions}
+                formatOptionLabel={formatCategoryOption}
                 value={field.state.value ?? ''}
                 onChange={(v) => field.handleChange(v ?? '')}
                 error={field.state.meta.errors[0]?.message}

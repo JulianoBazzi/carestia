@@ -1,12 +1,16 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession, isAdmin } from '~/lib/auth/current-user';
-import { errorResponse } from '~/lib/http';
+import { errorResponse, parseBody } from '~/lib/http';
+import { categorySchema } from '~/schemas/category';
 import { deleteCategory, updateCategory } from '~/services/management';
 
 export const runtime = 'nodejs';
 
 const P2002 = 'P2002';
+// `active` é opcional na edição (a rota preserva o valor atual quando ausente);
+// nome continua obrigatório.
+const categoryUpdateSchema = categorySchema.partial({ active: true });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -16,17 +20,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const active = typeof body.active === 'boolean' ? body.active : undefined;
-  if (!name) {
-    return NextResponse.json(
-      { message: 'Nome é obrigatório.' },
-      { status: StatusCodes.BAD_REQUEST },
-    );
+  const parsed = parseBody(categoryUpdateSchema, body);
+  if (!parsed.ok) {
+    return NextResponse.json({ message: parsed.error }, { status: StatusCodes.BAD_REQUEST });
   }
 
   try {
-    const count = await updateCategory(id, name, active);
+    const count = await updateCategory(id, parsed.data);
     if (count === 0) {
       return NextResponse.json(
         { message: 'Categoria não encontrada.' },

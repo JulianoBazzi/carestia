@@ -6,9 +6,13 @@ import { isInfosimplesEnabled } from '~/services/invoice/infosimples';
 
 export default async function InvoiceImportKeyPage() {
   const session = await getSession();
-  if (!session) redirect('/login');
+  if (!session) {
+    redirect('/login');
+  }
   // Recurso restrito ao admin: usuários comuns não veem a tela de importação por chave.
-  if (!isAdmin(session)) redirect('/invoices');
+  if (!isAdmin(session)) {
+    redirect('/invoices');
+  }
 
   return (
     <Template>

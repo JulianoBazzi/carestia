@@ -1,12 +1,13 @@
 'use client';
 
-import { Card, Flex, Heading, SegmentGroup, Stack, Table, Text } from '@chakra-ui/react';
+import { Card, Flex, Heading, HStack, SegmentGroup, Stack, Table, Text } from '@chakra-ui/react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { LuListChecks, LuPercent, LuScale } from 'react-icons/lu';
 import { DashboardHeader, DashboardSkeleton } from '~/app/components/dashboard-skeleton';
 import { AdSlot } from '~/components/Ad/AdSlot';
 import { StatusBadge } from '~/components/Badge/StatusBadge';
+import { CategoryIcon } from '~/components/CategoryIcon';
 import { InflationCompareChart } from '~/components/charts/InflationCompareChart';
 import { EmptyState } from '~/components/EmptyState';
 import { StatCard } from '~/components/StatCard';
@@ -22,10 +23,12 @@ const TYPE_TABS = [
 ];
 
 function typeBadge(type: ItemKind) {
-  if (type === 'energy')
+  if (type === 'energy') {
     return <StatusBadge withDot={false} label="Energia" colorPalette="energy" />;
-  if (type === 'service')
+  }
+  if (type === 'service') {
     return <StatusBadge withDot={false} label="Serviço" colorPalette="purple" />;
+  }
   return <StatusBadge withDot={false} label="Produto" colorPalette="blue" />;
 }
 
@@ -118,35 +121,45 @@ export function DashboardCard() {
                     description="Categorize seus itens e importe ao menos dois preços para ver a inflação por categoria."
                   />
                 ) : (
-                  <Table.Root size="sm">
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Categoria</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="center">Itens</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">Inflação</Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
-                    <Table.Body>
-                      {byCategory.map((cat) => (
-                        <Table.Row key={cat.category}>
-                          <Table.Cell>
-                            <Text fontWeight="medium" lineClamp={1}>
-                              {cat.category}
-                            </Text>
-                          </Table.Cell>
-                          <Table.Cell textAlign="center">{cat.itemCount}</Table.Cell>
-                          <Table.Cell textAlign="end">
-                            <Text
-                              color={cat.index >= 0 ? 'price.up' : 'price.down'}
-                              fontWeight="semibold"
-                            >
-                              {formatPct(cat.index, { signed: true })}
-                            </Text>
-                          </Table.Cell>
+                  <Table.ScrollArea>
+                    <Table.Root size="sm">
+                      <Table.Header>
+                        <Table.Row>
+                          <Table.ColumnHeader>Categoria</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="center">Itens</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">Inflação</Table.ColumnHeader>
                         </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Root>
+                      </Table.Header>
+                      <Table.Body>
+                        {byCategory.map((cat) => (
+                          <Table.Row key={cat.category}>
+                            <Table.Cell>
+                              <HStack gap="2.5">
+                                <CategoryIcon
+                                  icon={cat.icon}
+                                  color={cat.color}
+                                  size="7"
+                                  iconSize={13}
+                                />
+                                <Text fontWeight="medium" lineClamp={1}>
+                                  {cat.category}
+                                </Text>
+                              </HStack>
+                            </Table.Cell>
+                            <Table.Cell textAlign="center">{cat.itemCount}</Table.Cell>
+                            <Table.Cell textAlign="end">
+                              <Text
+                                color={cat.index >= 0 ? 'price.up' : 'price.down'}
+                                fontWeight="semibold"
+                              >
+                                {formatPct(cat.index, { signed: true })}
+                              </Text>
+                            </Table.Cell>
+                          </Table.Row>
+                        ))}
+                      </Table.Body>
+                    </Table.Root>
+                  </Table.ScrollArea>
                 )}
               </Stack>
             </Card.Body>
@@ -181,52 +194,56 @@ export function DashboardCard() {
                     description="Importe notas com o mesmo item ao menos duas vezes para calcular a variação."
                   />
                 ) : (
-                  <Table.Root size="sm" interactive>
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.ColumnHeader>Item</Table.ColumnHeader>
-                        <Table.ColumnHeader>Tipo</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="center">Preços</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">1º preço</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">Último</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">Variação</Table.ColumnHeader>
-                        <Table.ColumnHeader textAlign="end">vs IPCA</Table.ColumnHeader>
-                      </Table.Row>
-                    </Table.Header>
-                    <Table.Body>
-                      {filteredItems.map((item) => (
-                        <Table.Row
-                          key={item.itemId}
-                          cursor="pointer"
-                          onClick={() => router.push(`/inflation/${item.itemId}`)}
-                        >
-                          <Table.Cell>
-                            <Text fontWeight="medium" lineClamp={1}>
-                              {item.name}
-                            </Text>
-                            <Text fontSize="xs" color="fg.muted">
-                              {item.referenceCode}
-                            </Text>
-                          </Table.Cell>
-                          <Table.Cell>{typeBadge(item.type)}</Table.Cell>
-                          <Table.Cell textAlign="center">{item.count}</Table.Cell>
-                          <Table.Cell textAlign="end">{priceOf(item, item.firstValue)}</Table.Cell>
-                          <Table.Cell textAlign="end">{priceOf(item, item.lastValue)}</Table.Cell>
-                          <Table.Cell textAlign="end">
-                            <Text
-                              color={item.variationPct >= 0 ? 'price.up' : 'price.down'}
-                              fontWeight="semibold"
-                            >
-                              {formatPct(item.variationPct, { signed: true })}
-                            </Text>
-                          </Table.Cell>
-                          <Table.Cell textAlign="end" color="fg.muted">
-                            {formatPp((item.variationPct - ipcaAcc) * 100)}
-                          </Table.Cell>
+                  <Table.ScrollArea>
+                    <Table.Root size="sm" interactive>
+                      <Table.Header>
+                        <Table.Row>
+                          <Table.ColumnHeader>Item</Table.ColumnHeader>
+                          <Table.ColumnHeader>Tipo</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="center">Preços</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">1º preço</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">Último</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">Variação</Table.ColumnHeader>
+                          <Table.ColumnHeader textAlign="end">vs IPCA</Table.ColumnHeader>
                         </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table.Root>
+                      </Table.Header>
+                      <Table.Body>
+                        {filteredItems.map((item) => (
+                          <Table.Row
+                            key={item.itemId}
+                            cursor="pointer"
+                            onClick={() => router.push(`/inflation/${item.itemId}`)}
+                          >
+                            <Table.Cell>
+                              <Text fontWeight="medium" lineClamp={1}>
+                                {item.name}
+                              </Text>
+                              <Text fontSize="xs" color="fg.muted">
+                                {item.referenceCode}
+                              </Text>
+                            </Table.Cell>
+                            <Table.Cell>{typeBadge(item.type)}</Table.Cell>
+                            <Table.Cell textAlign="center">{item.count}</Table.Cell>
+                            <Table.Cell textAlign="end">
+                              {priceOf(item, item.firstValue)}
+                            </Table.Cell>
+                            <Table.Cell textAlign="end">{priceOf(item, item.lastValue)}</Table.Cell>
+                            <Table.Cell textAlign="end">
+                              <Text
+                                color={item.variationPct >= 0 ? 'price.up' : 'price.down'}
+                                fontWeight="semibold"
+                              >
+                                {formatPct(item.variationPct, { signed: true })}
+                              </Text>
+                            </Table.Cell>
+                            <Table.Cell textAlign="end" color="fg.muted">
+                              {formatPp((item.variationPct - ipcaAcc) * 100)}
+                            </Table.Cell>
+                          </Table.Row>
+                        ))}
+                      </Table.Body>
+                    </Table.Root>
+                  </Table.ScrollArea>
                 )}
               </Stack>
             </Card.Body>

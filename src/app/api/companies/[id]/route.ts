@@ -1,6 +1,8 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin } from '~/lib/auth/current-user';
+import { parseBody, safeRoute } from '~/lib/http';
+import { companyUpdateSchema } from '~/schemas/company';
 import {
   deleteCompany,
   getCompany,
@@ -9,14 +11,6 @@ import {
 } from '~/services/management';
 
 export const runtime = 'nodejs';
-
-const FIELDS: (keyof ICompanyUpdate)[] = [
-  'social_name',
-  'fantasy_name',
-  'neighborhood',
-  'city',
-  'state',
-];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -35,38 +29,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ data: company });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
-  }
-
-  const { id } = await params;
-  const body = await req.json().catch(() => ({}));
-
-  const data: ICompanyUpdate = {};
-  for (const field of FIELDS) {
-    if (field in body) {
-      const value = body[field];
-      (data as Record<string, unknown>)[field] = value === '' ? null : value;
+export const PATCH = safeRoute(
+  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(
+        { message: 'Não autenticado.' },
+        { status: StatusCodes.UNAUTHORIZED },
+      );
     }
-  }
-  if (!data.social_name) {
-    return NextResponse.json(
-      { message: 'Razão social é obrigatória.' },
-      { status: StatusCodes.BAD_REQUEST },
-    );
-  }
 
-  const count = await updateCompany(id, data);
-  if (count === 0) {
-    return NextResponse.json(
-      { message: 'Empresa não encontrada.' },
-      { status: StatusCodes.NOT_FOUND },
-    );
-  }
-  return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
-}
+    const { id } = await params;
+    const body = await req.json().catch(() => ({}));
+    const parsed = parseBody(companyUpdateSchema, body);
+    if (!parsed.ok) {
+      return NextResponse.json({ message: parsed.error }, { status: StatusCodes.BAD_REQUEST });
+    }
+    const { state, ...rest } = parsed.data;
+    const data: ICompanyUpdate = {
+      ...rest,
+      ...(state !== undefined && { state: state ? state.toUpperCase() : null }),
+    };
+
+    const count = await updateCompany(id, data);
+    if (count === 0) {
+      return NextResponse.json(
+        { message: 'Empresa não encontrada.' },
+        { status: StatusCodes.NOT_FOUND },
+      );
+    }
+    return NextResponse.json({ data: { id } }, { status: StatusCodes.OK });
+  },
+);
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();

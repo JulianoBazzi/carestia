@@ -5,7 +5,9 @@ import { getSession, isAdmin } from '~/lib/auth/current-user';
 
 export default async function InvoicesPage() {
   const session = await getSession();
-  if (!session) redirect('/login');
+  if (!session) {
+    redirect('/login');
+  }
 
   return (
     <Template>

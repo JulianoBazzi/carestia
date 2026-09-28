@@ -1,4 +1,5 @@
 import { onlyNumbers } from '@julianobazzi/utils';
+import { UFS } from '~/lib/ufs';
 import type { InfosimplesNfce, InfosimplesNfceProduct } from '~/schemas/infosimples';
 import type { ICompanyDTO, IInvoiceDTO, IItemDTO, IParsedInvoice } from '~/services/invoice/parser';
 
@@ -18,35 +19,7 @@ import type { ICompanyDTO, IInvoiceDTO, IItemDTO, IParsedInvoice } from '~/servi
  * emitente, sem significado fora daquele CNPJ.
  */
 
-const UFS = new Set([
-  'AC',
-  'AL',
-  'AM',
-  'AP',
-  'BA',
-  'CE',
-  'DF',
-  'ES',
-  'GO',
-  'MA',
-  'MG',
-  'MS',
-  'MT',
-  'PA',
-  'PB',
-  'PE',
-  'PI',
-  'PR',
-  'RJ',
-  'RN',
-  'RO',
-  'RR',
-  'RS',
-  'SC',
-  'SE',
-  'SP',
-  'TO',
-]);
+const UF_SET = new Set<string>(UFS);
 
 /** Preenchimentos que o emitente usa no lugar de deixar o campo em branco. */
 const PLACEHOLDERS = new Set(['NAO INFORMADO', 'NAO INFORMADA', 'SEM INFORMACAO', 'N/A', '-']);
@@ -58,7 +31,9 @@ function text(value: unknown): string {
 /** Descarta preenchimentos de placeholder, tratando-os como campo vazio. */
 function meaningful(value: string): string | undefined {
   const v = value.trim();
-  if (!v || PLACEHOLDERS.has(v.toUpperCase())) return undefined;
+  if (!v || PLACEHOLDERS.has(v.toUpperCase())) {
+    return undefined;
+  }
   return v;
 }
 
@@ -73,9 +48,13 @@ export function parseMoney(raw: unknown, fallback?: number | null): string {
   const s = text(raw);
   if (s && s.toUpperCase() !== 'NAN') {
     const normalized = s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s;
-    if (/^-?\d+(?:\.\d+)?$/.test(normalized)) return normalized;
+    if (/^-?\d+(?:\.\d+)?$/.test(normalized)) {
+      return normalized;
+    }
   }
-  if (fallback != null && Number.isFinite(fallback)) return String(fallback);
+  if (fallback != null && Number.isFinite(fallback)) {
+    return String(fallback);
+  }
   return '0';
 }
 
@@ -87,7 +66,9 @@ export function parseMoney(raw: unknown, fallback?: number | null): string {
  */
 export function toIsoDateTime(date: unknown, time: unknown): string {
   const d = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text(date));
-  if (!d) throw new Error('Data de emissão ausente ou inválida na resposta da Infosimples.');
+  if (!d) {
+    throw new Error('Data de emissão ausente ou inválida na resposta da Infosimples.');
+  }
   const [, day, month, year] = d;
   const t = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text(time));
   const clock = t ? `${t[1]}:${t[2]}:${t[3] ?? '00'}` : '12:00:00';
@@ -114,10 +95,14 @@ export function parseAddressTail(address: unknown): {
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean);
-  if (parts.length < 3) return {};
+  if (parts.length < 3) {
+    return {};
+  }
 
   const state = parts[parts.length - 1].toUpperCase();
-  if (!UFS.has(state)) return {};
+  if (!UF_SET.has(state)) {
+    return {};
+  }
 
   return {
     state,

@@ -1,7 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { type NextRequest, NextResponse } from 'next/server';
 import type { Prisma } from '~/generated/prisma/client';
-import { getSession } from '~/lib/auth/current-user';
+import { getSession, isAdmin } from '~/lib/auth/current-user';
 import { errorResponse, parseBody, safeRoute } from '~/lib/http';
 import { buildMeta, getPaginationParams } from '~/lib/pagination';
 import prisma from '~/lib/prisma';
@@ -21,6 +21,10 @@ const SORTABLE = new Set([
   'updated_at',
 ]);
 const TYPES = new Set(['product', 'service']);
+// Janela do preço médio da listagem. 12 meses (e não 30 dias): a maior parte
+// dos itens do catálogo não reaparece todo mês, e com uma janela curta a coluna
+// fica vazia justamente nos itens que se quer comparar para mesclar.
+const PRICE_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
 
 export const GET = safeRoute(async (req: NextRequest) => {
   const session = await getSession();
@@ -63,19 +67,58 @@ export const GET = safeRoute(async (req: NextRequest) => {
     prisma.item.count({ where }),
   ]);
 
-  const data = rows.map((r) => ({
-    id: r.id,
-    type: r.type,
-    reference_code: r.reference_code,
-    name: r.name,
-    unit: r.unit,
-    nbs_code: r.nbs_code,
-    category_id: r.category_id,
-    category: r.category,
-    usage_count: r._count.invoice_items,
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-  }));
+  // Preço médio por item — o sinal que diz se dois itens parecidos são mesmo o
+  // mesmo produto (mesclagem). A janela é por `invoice.issued_at` (data
+  // econômica): `invoice_items` não tem data própria. Média GLOBAL (todas as
+  // notas), sem jamais ler nem filtrar por `user_id` — mesmo princípio de
+  // `public-prices.ts`, que também agrega em JS. Busca só as linhas dos ids da
+  // página para não varrer a tabela inteira.
+  const ids = rows.map((r) => r.id);
+  const points = ids.length
+    ? await prisma.invoiceItem.findMany({
+        where: {
+          item_id: { in: ids },
+          invoice: { deleted_at: null, issued_at: { gte: new Date(Date.now() - PRICE_WINDOW_MS) } },
+        },
+        select: { item_id: true, unit_value: true, invoice: { select: { issued_at: true } } },
+      })
+    : [];
+
+  const priceByItem = new Map<string, { sum: number; count: number; last: Date }>();
+  for (const point of points) {
+    const current = priceByItem.get(point.item_id);
+    const issuedAt = point.invoice.issued_at;
+    if (!current) {
+      priceByItem.set(point.item_id, { sum: Number(point.unit_value), count: 1, last: issuedAt });
+      continue;
+    }
+    current.sum += Number(point.unit_value);
+    current.count += 1;
+    if (issuedAt > current.last) {
+      current.last = issuedAt;
+    }
+  }
+
+  const data = rows.map((r) => {
+    const price = priceByItem.get(r.id);
+    return {
+      id: r.id,
+      type: r.type,
+      reference_code: r.reference_code,
+      name: r.name,
+      unit: r.unit,
+      ean: r.ean,
+      nbs_code: r.nbs_code,
+      category_id: r.category_id,
+      category: r.category,
+      usage_count: r._count.invoice_items,
+      avg_price: price ? price.sum / price.count : null,
+      price_samples: price?.count ?? 0,
+      last_price_at: price?.last ?? null,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    };
+  });
 
   return NextResponse.json({ data, meta: buildMeta(page, limit, total) });
 });
@@ -93,7 +136,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const item = await createItem(parsed.data);
+    // EAN só-admin (ver PATCH em items/[id]).
+    const { ean, ...rest } = parsed.data;
+    const item = await createItem(isAdmin(session) ? { ...rest, ean } : rest);
     return NextResponse.json({ data: item }, { status: StatusCodes.CREATED });
   } catch (e) {
     if (

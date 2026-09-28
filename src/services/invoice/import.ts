@@ -1,5 +1,6 @@
 import { mapPool } from '~/lib/concurrency';
-import { isUniqueViolation } from '~/lib/errors';
+import { BusinessError, isUniqueViolation } from '~/lib/errors';
+import { findMunicipioByName } from '~/lib/geo/municipios';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
@@ -13,9 +14,18 @@ import {
   type IParsedInvoice,
   parseXml,
 } from '~/services/invoice/parser';
+import { purgeDeletedInvoice } from '~/services/invoice/queries';
 
 export type ImportResult =
-  | { status: 'imported'; invoiceId: string; accessKey: string; ignoredItems?: number }
+  | {
+      status: 'imported';
+      invoiceId: string;
+      accessKey: string;
+      /** Linhas de itens bloqueados pela administração. */
+      ignoredItems?: number;
+      /** Linhas sem preço unitário válido (zero, negativo ou ausente). */
+      invalidItems?: number;
+    }
   | { status: 'duplicated'; accessKey: string }
   | { status: 'error'; message: string };
 
@@ -142,15 +152,39 @@ export async function importParsedInvoice(
     seenKeys.add(parsed.invoice.accessKey);
   }
 
+  // Preço unitário zero/negativo/ausente não é compra comparável (brinde,
+  // desconto integral, falha do emitente): puxaria médias públicas e o índice
+  // pessoal para baixo. A linha é descartada; a nota segue com as demais.
+  const validItems = parsed.items.filter((it) => {
+    const v = Number(it.unitValue);
+    return Number.isFinite(v) && v > 0;
+  });
+  const invalidItems = parsed.items.length - validItems.length;
+
   // Empresa e itens são catálogo GLOBAL e ficam fora de transação de propósito:
   // a resolução de itens faz várias queries por linha (EAN, similaridade, alias)
   // e num banco remoto estourava o timeout da transação interativa (5s). Se a
   // criação da nota falhar depois (ex.: duplicada), empresa/itens persistidos
   // são entradas legítimas que o matching reutiliza — nada a desfazer.
   try {
+    // Chave já importada por este usuário: ativa é duplicada (sem gastar a
+    // resolução de empresa/itens); soft-deletada é apagada de vez para que a
+    // reimportação funcione — a unique (user_id, access_key) inclui as
+    // excluídas e o P2002 lá embaixo a trataria como duplicada para sempre.
+    const previous = await prisma.invoice.findUnique({
+      where: { user_id_access_key: { user_id: userId, access_key: parsed.invoice.accessKey } },
+      select: { id: true, deleted_at: true },
+    });
+    if (previous && !previous.deleted_at) {
+      return { status: 'duplicated', accessKey: parsed.invoice.accessKey };
+    }
+    if (previous) {
+      await purgeDeletedInvoice(previous.id);
+    }
+
     const { data: companyData, origin } = await resolveCompany(parsed.company);
 
-    const company = await prisma.company.upsert({
+    let company = await prisma.company.upsert({
       where: { document: companyData.document },
       create: {
         id: newId(),
@@ -163,11 +197,32 @@ export async function importParsedInvoice(
         ibge_code: companyData.ibgeCode,
         origin,
       },
-      update: {
-        social_name: companyData.socialName,
-        fantasy_name: companyData.fantasyName,
-      },
+      // Catálogo global: uma nota (possivelmente forjada) NUNCA sobrescreve o
+      // que já está gravado — só completa campos vazios, logo abaixo.
+      update: {},
     });
+
+    // Completa o que está vazio (empresa criada por um XML sem endereço ficava
+    // sem cidade/UF para sempre e cada nota nova do mesmo emitente voltava a
+    // consultar a BrasilAPI) e restaura empresa soft-deletada — senão a nota
+    // ficaria presa a um cadastro oculto que o admin não consegue editar.
+    const fill = {
+      ...(company.deleted_at && { deleted_at: null }),
+      ...(!company.fantasy_name &&
+        companyData.fantasyName && {
+          fantasy_name: companyData.fantasyName,
+        }),
+      ...(!company.neighborhood &&
+        companyData.neighborhood && {
+          neighborhood: companyData.neighborhood,
+        }),
+      ...(!company.city && companyData.city && { city: companyData.city }),
+      ...(!company.state && companyData.state && { state: companyData.state }),
+      ...(!company.ibge_code && companyData.ibgeCode && { ibge_code: companyData.ibgeCode }),
+    };
+    if (Object.keys(fill).length > 0) {
+      company = await prisma.company.update({ where: { id: company.id }, data: fill });
+    }
 
     // Write-through: próximas notas do mesmo emitente resolvem a localização
     // pelo cache, sem findUnique nem BrasilAPI.
@@ -194,7 +249,7 @@ export async function importParsedInvoice(
       // Separador que não ocorre nos dados — espaço colidiria com nomes compostos.
       [it.type, it.referenceCode, it.name, it.unit ?? '', it.ean ?? ''].join('\u0000');
     const uniqueLines = new Map<string, IItemDTO>();
-    for (const it of parsed.items) {
+    for (const it of validItems) {
       if (!uniqueLines.has(identityOf(it))) {
         uniqueLines.set(identityOf(it), it);
       }
@@ -218,7 +273,7 @@ export async function importParsedInvoice(
 
     const lineItems = [];
     let ignoredItems = 0;
-    for (const it of parsed.items) {
+    for (const it of validItems) {
       const itemId = itemIdByIdentity.get(identityOf(it));
       // Item ignorado pela administração: a linha é descartada (a nota ainda é
       // criada, preservando o dedup por access_key).
@@ -233,6 +288,9 @@ export async function importParsedInvoice(
         unit: normalizeUnit(it.unit),
         // Privacy-first: só o preço unitário (R$), sem quantidade nem total.
         unit_value: Number(it.unitValue),
+        // Tributo aproximado por unidade (R$/un); null quando a nota não informa
+        // o <vTotTrib> da linha — a tag é opcional no layout.
+        unit_tax_value: it.unitTaxValue != null ? Number(it.unitTaxValue) : null,
       });
     }
 
@@ -263,7 +321,12 @@ export async function importParsedInvoice(
           neighborhood: normalizeName(location.neighborhood) ?? null,
           city: normalizeName(location.city) ?? null,
           state: normalizeName(location.state) ?? null,
-          ibge_code: location.ibgeCode ?? null,
+          // Sem cMun no XML (NFC-e via Infosimples, BrasilAPI), resolve o IBGE pelo
+          // nome da cidade + UF para o índice regional casar por código.
+          ibge_code:
+            location.ibgeCode ??
+            findMunicipioByName(location.state, location.city)?.ibge_code ??
+            null,
           items: { createMany: { data: lineItems } },
         },
       });
@@ -274,6 +337,7 @@ export async function importParsedInvoice(
         accessKey: parsed.invoice.accessKey,
         // Só informa quando houve linha bloqueada (mantém o payload enxuto).
         ...(ignoredItems > 0 && { ignoredItems }),
+        ...(invalidItems > 0 && { invalidItems }),
       };
     } catch (e) {
       // Só o P2002 DESTE create é nota duplicada — a unique (user_id, access_key).
@@ -285,6 +349,12 @@ export async function importParsedInvoice(
       throw e;
     }
   } catch (e) {
-    return { status: 'error', message: (e as Error).message };
+    // Mensagem de negócio vai ao usuário; o resto (Prisma, rede) só no log —
+    // não vaza nome de coluna nem detalhe de conexão.
+    if (e instanceof BusinessError) {
+      return { status: 'error', message: e.message };
+    }
+    console.error('[import] falha ao importar nota', e);
+    return { status: 'error', message: 'Erro inesperado ao importar a nota. Tente novamente.' };
   }
 }

@@ -41,6 +41,11 @@ model Category {
   name       String    @db.VarChar(255)
   slug       String    @unique @db.VarChar(255)
   active     Boolean   @default(true)
+  // Identidade visual da categoria. `icon` é a CHAVE do registry estático em
+  // ~/lib/category-icons (ex.: 'beef'), nunca o nome do componente; `color` é um
+  // colorPalette do Chakra (ex.: 'red'). Nulo → fallback cinza/caixa na UI.
+  icon       String?   @db.VarChar(40)
+  color      String?   @db.VarChar(20)
   created_at DateTime  @default(now()) @db.Timestamptz
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
@@ -86,9 +91,10 @@ model Item {
   deleted_at     DateTime? @db.Timestamptz
   ignored_at     DateTime? @db.Timestamptz // bloqueio permanente: nunca recriar/reativar na importação
 
-  category      Category?     @relation(fields: [category_id], references: [id])
-  invoice_items InvoiceItem[]
-  aliases       ItemAlias[]
+  category           Category?          @relation(fields: [category_id], references: [id])
+  invoice_items      InvoiceItem[]
+  aliases            ItemAlias[]
+  price_observations PriceObservation[]
 
   @@unique([type, reference_code, name])
   @@index([category_id])
@@ -133,30 +139,31 @@ model User {
   updated_at DateTime  @updatedAt @db.Timestamptz
   deleted_at DateTime? @db.Timestamptz
 
-  invoices Invoice[]
+  invoices           Invoice[]
+  price_observations PriceObservation[]
 
   @@index([deleted_at])
   @@map("users")
 }
 
 model Invoice {
-  id         String       @id @db.VarChar(26)
-  user_id    String       @db.VarChar(26)
-  company_id String       @db.VarChar(26)
-  model      InvoiceModel
-  number     String       @db.VarChar(20)
-  series     String?      @db.VarChar(10)
-  access_key String       @db.VarChar(64) // chave NF-e/NF3e (44) | Id NFS-e
-  issued_at  DateTime     @db.Timestamptz
+  id           String       @id @db.VarChar(26)
+  user_id      String       @db.VarChar(26)
+  company_id   String       @db.VarChar(26)
+  model        InvoiceModel
+  number       String       @db.VarChar(20)
+  series       String?      @db.VarChar(10)
+  access_key   String       @db.VarChar(64) // chave NF-e/NF3e (44) | Id NFS-e
+  issued_at    DateTime     @db.Timestamptz
   // Local da compra/consumo (anonimizado) — usado no índice regional.
   // Privacy-first: NÃO armazenamos total da nota, XML cru, nem dados pessoais do consumidor.
-  neighborhood String?    @db.VarChar(255)
-  city         String?    @db.VarChar(255)
-  state        String?    @db.VarChar(2)
-  ibge_code    String?    @db.VarChar(7)
-  created_at DateTime     @default(now()) @db.Timestamptz
-  updated_at DateTime     @updatedAt @db.Timestamptz
-  deleted_at DateTime?    @db.Timestamptz
+  neighborhood String?      @db.VarChar(255)
+  city         String?      @db.VarChar(255)
+  state        String?      @db.VarChar(2)
+  ibge_code    String?      @db.VarChar(7)
+  created_at   DateTime     @default(now()) @db.Timestamptz
+  updated_at   DateTime     @updatedAt @db.Timestamptz
+  deleted_at   DateTime?    @db.Timestamptz
 
   user    User          @relation(fields: [user_id], references: [id])
   company Company       @relation(fields: [company_id], references: [id])
@@ -170,16 +177,22 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id          String   @id @db.VarChar(26)
-  invoice_id  String   @db.VarChar(26)
-  item_id     String   @db.VarChar(26)
-  description String   @db.VarChar(255)
-  unit        String?  @db.VarChar(10)
+  id             String   @id @db.VarChar(26)
+  invoice_id     String   @db.VarChar(26)
+  item_id        String   @db.VarChar(26)
+  description    String   @db.VarChar(255)
+  unit           String?  @db.VarChar(10)
   // Preço unitário em reais (R$/un para produtos/serviços, R$/kWh para energia),
-  // com no máximo 2 casas decimais (o banco arredonda na gravação).
+  // com até 4 casas decimais: tarifa de energia (0,7123/kWh) e combustível
+  // (6,199/L) perderiam precisão com 2 — e a inflação viraria degraus.
   // Privacy-first: guardamos só o preço unitário — não a quantidade nem o total.
-  unit_value  Decimal  @db.Decimal(14, 2)
-  created_at  DateTime @default(now()) @db.Timestamptz
+  unit_value     Decimal  @db.Decimal(14, 4)
+  // Tributo aproximado POR UNIDADE (R$/un), derivado de det/imposto/vTotTrib ÷ qCom
+  // (Lei 12.741/2012). Nulo quando o emitente não publica a tag — ela é opcional no
+  // layout, e boa parte das notas cumpre a lei só com texto livre em infCpl.
+  // Privacy-first: guardamos o unitário, nunca o vTotTrib bruto (que é total da linha).
+  unit_tax_value Decimal? @db.Decimal(14, 4)
+  created_at     DateTime @default(now()) @db.Timestamptz
 
   invoice Invoice @relation(fields: [invoice_id], references: [id])
   item    Item    @relation(fields: [item_id], references: [id])
@@ -187,4 +200,33 @@ model InvoiceItem {
   @@index([invoice_id])
   @@index([item_id])
   @@map("invoice_items")
+}
+
+// Observações de preço de prateleira (foto de etiqueta lida no scanner) — segunda
+// fonte do índice público, ao lado das notas. Privacy-first: só preço unitário +
+// cidade/UF; a foto NÃO é armazenada. `user_id` existe para controle de abuso e
+// moderação e NUNCA é lido na agregação pública (mesma regra de invoices).
+// Não entra na inflação pessoal (não é compra).
+model PriceObservation {
+  id          String    @id @db.VarChar(26)
+  user_id     String    @db.VarChar(26)
+  item_id     String    @db.VarChar(26)
+  unit_value  Decimal   @db.Decimal(14, 4)
+  unit        String?   @db.VarChar(10)
+  source      String    @db.VarChar(20) // "label_photo"
+  observed_at DateTime  @db.Timestamptz
+  city        String?   @db.VarChar(255)
+  state       String?   @db.VarChar(2)
+  ibge_code   String?   @db.VarChar(7)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  deleted_at  DateTime? @db.Timestamptz
+
+  user User @relation(fields: [user_id], references: [id])
+  item Item @relation(fields: [item_id], references: [id])
+
+  @@index([item_id])
+  @@index([user_id])
+  @@index([state])
+  @@index([deleted_at])
+  @@map("price_observations")
 }

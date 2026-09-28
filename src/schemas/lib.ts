@@ -3,7 +3,13 @@ import { z } from 'zod';
 
 export const zulid = () => z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
 
-export const zrequired = () => z.string().nonempty();
+/** Texto obrigatório. `max` evita estourar o VarChar (que viraria 500). */
+export const zrequired = (max = 255) =>
+  z
+    .string()
+    .trim()
+    .nonempty()
+    .max(max, { message: `Máximo de ${max} caracteres.` });
 
 export const znumbers = () =>
   z
@@ -17,9 +23,12 @@ export const zdocument = () =>
     .nonempty()
     .transform((v) => onlyAlphanumeric(v));
 
-export const zoptional = () =>
+/** Texto opcional (vazio vira `null`). `max` evita estourar o VarChar. */
+export const zoptional = (max = 255) =>
   z
     .string()
+    .trim()
+    .max(max, { message: `Máximo de ${max} caracteres.` })
     .nullable()
     .transform((value) => (value === '' ? null : value));
 

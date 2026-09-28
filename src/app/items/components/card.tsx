@@ -1,7 +1,8 @@
 'use client';
 
-import { Box, Flex, Heading, HStack, Input, SegmentGroup, Stack, Text } from '@chakra-ui/react';
+import { Box, Flex, Heading, HStack, Input, Stack, Text } from '@chakra-ui/react';
 import { useDebounce } from '@julianobazzi/nextjs-utils';
+import { formatDate } from '@julianobazzi/utils';
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { LuBan, LuPencil, LuPlus, LuSparkles, LuTags } from 'react-icons/lu';
@@ -11,15 +12,21 @@ import {
   type CategorizeModalHandle,
 } from '~/app/items/components/categorize-modal';
 import { ItemModal, type ItemModalHandle } from '~/app/items/components/modal';
-import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import { ActionIconButton } from '~/components/Button/IconButton';
+import { formatCategoryOption, toCategoryOptions } from '~/components/Form/CategorySelectOption';
 import { ConfirmDialog, type ConfirmDialogHandle } from '~/components/Form/ConfirmDialog';
 import { Select } from '~/components/Form/Select';
 import { SelectWithService } from '~/components/Form/SelectWithService';
 import { type CustomColumnDef, TableWithService } from '~/components/Form/TableWithService';
-import { API_URL_ITEMS, TABLE_ITEMS } from '~/config/constants';
+import {
+  API_URL_ITEMS,
+  TABLE_INFLATION,
+  TABLE_ITEMS,
+  TABLE_PUBLIC_PRICES,
+} from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
+import { formatPrice } from '~/lib/format';
 import type IItemAPI from '~/models/Entity/Item/IItemAPI';
 import { OrderByTypeEnum } from '~/models/Request/Base/IParamsRequest';
 import { api } from '~/services/apiClient';
@@ -27,15 +34,26 @@ import { useCategories } from '~/services/hooks/useCategories';
 import { getItems, useItems } from '~/services/hooks/useItems';
 import { queryClient } from '~/services/queryClient';
 
-const TYPE_FILTERS = [
-  { value: '', label: 'Todos' },
-  { value: 'product', label: 'Produtos' },
-  { value: 'service', label: 'Serviços' },
-];
+// Neste momento a tela trata só de produtos: o tipo é fixo em toda consulta
+// (listagem, contador de não-categorizados e selects de mesclagem). Constante
+// fora do componente porque `parameters` entra na key de remount do select.
+const PRODUCT_ONLY = { type: 'product' } as const;
 
 interface ItemsCardProps {
   aiEnabled: boolean;
   canManage: boolean;
+}
+
+/**
+ * Ignorar/mesclar mexe nas linhas que alimentam o índice pessoal e o público —
+ * não só na lista de itens.
+ */
+function invalidateItemDependents() {
+  return Promise.all(
+    [TABLE_ITEMS, TABLE_INFLATION, TABLE_PUBLIC_PRICES].map((key) =>
+      queryClient.invalidateQueries({ queryKey: [key] }),
+    ),
+  );
 }
 
 export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
@@ -46,7 +64,6 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 500);
-  const [typeFilter, setTypeFilter] = useState('');
   const [source, setSource] = useState<IItemAPI | null>(null);
   const [target, setTarget] = useState<IItemAPI | null>(null);
 
@@ -56,13 +73,10 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
     sortedBy: OrderByTypeEnum.Asc,
   });
   // Usado apenas para o contador de itens sem categoria (limitado a 100, como antes).
-  const itemsQuery = useItems({ perPage: 100 });
+  const itemsQuery = useItems({ perPage: 100, ...PRODUCT_ONLY });
   const categories = categoriesQuery.data?.data ?? [];
   const allItems = itemsQuery.data?.data ?? [];
-  const categoryOptions = useMemo(
-    () => categories.map((c) => ({ value: c.id, label: c.name })),
-    [categories],
-  );
+  const categoryOptions = useMemo(() => toCategoryOptions(categories), [categories]);
 
   const setCategoryMutation = useMutation({
     mutationFn: ({ id, categoryId }: { id: string; categoryId: string | null }) =>
@@ -80,7 +94,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
     mutationFn: (id: string) => api.delete(`${API_URL_ITEMS}/${id}`),
     async onSuccess() {
       successFeedbackToast('Item', 'Item ignorado.');
-      await queryClient.invalidateQueries({ queryKey: [TABLE_ITEMS] });
+      await invalidateItemDependents();
     },
     onError(error: Error) {
       errorFeedbackToast('Item', error);
@@ -97,7 +111,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
       successFeedbackToast('Itens', 'Mesclados com sucesso!');
       setSource(null);
       setTarget(null);
-      await queryClient.invalidateQueries({ queryKey: [TABLE_ITEMS] });
+      await invalidateItemDependents();
     },
     onError(error: Error) {
       errorFeedbackToast('Itens', error);
@@ -134,15 +148,27 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
         ),
       },
       {
-        accessorKey: 'type',
-        header: 'Tipo',
-        cell: ({ row }) => (
-          <StatusBadge
-            withDot={false}
-            label={row.original.type === 'product' ? 'Produto' : 'Serviço'}
-            colorPalette={row.original.type === 'product' ? 'blue' : 'purple'}
-          />
-        ),
+        id: 'avg_price',
+        header: 'Preço médio (12m)',
+        // Agregado calculado na API: não está no SORTABLE da rota.
+        enableSorting: false,
+        cell: ({ row }) => {
+          const { avg_price, price_samples, last_price_at } = row.original;
+          // `typeof` e não `=== null`: resposta antiga/sem o campo (cache do
+          // client, deploy no meio do caminho) não pode quebrar a listagem.
+          if (typeof avg_price !== 'number') {
+            return <Text color="fg.subtle">—</Text>;
+          }
+          return (
+            <Stack gap="0">
+              <Text fontVariantNumeric="tabular-nums">{formatPrice(avg_price)}</Text>
+              <Text fontSize="xs" color="fg.muted" whiteSpace="nowrap">
+                {price_samples === 1 ? '1 registro' : `${price_samples ?? 0} registros`}
+                {last_price_at ? ` · ${formatDate(last_price_at)}` : ''}
+              </Text>
+            </Stack>
+          );
+        },
       },
       {
         id: 'category',
@@ -156,6 +182,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
               usePortal
               placeholder="Sem categoria"
               options={categoryOptions}
+              formatOptionLabel={formatCategoryOption}
               value={row.original.category_id}
               onChange={(v) =>
                 setCategoryMutation.mutate({
@@ -239,21 +266,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
         </HStack>
       </Flex>
 
-      <Flex justify="space-between" align="center" gap="3" wrap="wrap">
-        <SegmentGroup.Root
-          size="sm"
-          value={typeFilter}
-          onValueChange={(e) => setTypeFilter(e.value ?? '')}
-        >
-          <SegmentGroup.Indicator />
-          {TYPE_FILTERS.map((t) => (
-            <SegmentGroup.Item key={t.value} value={t.value}>
-              <SegmentGroup.ItemText>{t.label}</SegmentGroup.ItemText>
-              <SegmentGroup.ItemHiddenInput />
-            </SegmentGroup.Item>
-          ))}
-        </SegmentGroup.Root>
-
+      <Flex justify="end" align="center" gap="3" wrap="wrap">
         <Input
           size="sm"
           maxW="sm"
@@ -266,7 +279,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
 
       <TableWithService
         columns={columns}
-        parameters={{ search: debouncedSearch, type: typeFilter || undefined }}
+        parameters={{ search: debouncedSearch, ...PRODUCT_ONLY }}
         onSearch={useItems}
         orderBy={{ id: 'name', desc: false }}
       />
@@ -286,6 +299,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
                 size="sm"
                 placeholder="Item de origem (será removido)"
                 onSearch={getItems}
+                parameters={PRODUCT_ONLY}
                 value={source}
                 onChange={setSource}
                 disabled={mergeMutation.isPending}
@@ -297,6 +311,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
                 size="sm"
                 placeholder="Item de destino (será mantido)"
                 onSearch={getItems}
+                parameters={PRODUCT_ONLY}
                 value={target}
                 onChange={setTarget}
                 disabled={mergeMutation.isPending}
@@ -319,7 +334,7 @@ export function ItemsCard({ aiEnabled, canManage }: ItemsCardProps) {
         </Box>
       )}
 
-      <ItemModal ref={modalRef} />
+      <ItemModal ref={modalRef} canEditEan={canManage} />
       <ConfirmDialog ref={confirmRef} />
       <CategorizeModal ref={categorizeModalRef} />
       <AliasesModal ref={aliasesModalRef} />

@@ -1,3 +1,4 @@
+import { monthKey, toDateInputValue } from '~/lib/format';
 // Funções puras de agregação (sem DB) — testáveis isoladamente.
 // Privacy-first: trabalhamos só com PREÇO UNITÁRIO (R$), sem quantidades nem totais.
 
@@ -9,6 +10,9 @@ export interface IInflationRow {
   referenceCode: string;
   type: ItemKind;
   categoryName?: string;
+  /** Identidade visual da categoria (ver `~/lib/category-icons`). */
+  categoryIcon?: string | null;
+  categoryColor?: string | null;
   issuedAt: Date;
   unitValue: number; // reais (R$/un, R$/kWh)
 }
@@ -19,6 +23,8 @@ export interface IInflationItem {
   referenceCode: string;
   type: ItemKind;
   categoryName?: string;
+  categoryIcon?: string | null;
+  categoryColor?: string | null;
   count: number;
   firstValue: number; // reais
   lastValue: number; // reais
@@ -45,7 +51,9 @@ export function computeInflation(rows: IInflationRow[]): IInflation {
 
   const items: IInflationItem[] = [];
   for (const [itemId, list] of byItem) {
-    if (list.length < 2) continue;
+    if (list.length < 2) {
+      continue;
+    }
     const sorted = [...list].sort((a, b) => a.issuedAt.getTime() - b.issuedAt.getTime());
     const firstValue = sorted[0].unitValue;
     const lastValue = sorted[sorted.length - 1].unitValue;
@@ -57,12 +65,14 @@ export function computeInflation(rows: IInflationRow[]): IInflation {
       referenceCode: sorted[0].referenceCode,
       type: sorted[0].type,
       categoryName: sorted[0].categoryName,
+      categoryIcon: sorted[0].categoryIcon,
+      categoryColor: sorted[0].categoryColor,
       count: sorted.length,
       firstValue,
       lastValue,
       variationPct,
       history: sorted.map((r) => ({
-        date: r.issuedAt.toISOString().slice(0, 10),
+        date: toDateInputValue(r.issuedAt),
         unitValue: r.unitValue,
       })),
     });
@@ -117,7 +127,7 @@ export interface IInflationSeriesPoint {
 
 /** Lista de meses "YYYY-MM" do menor ao maior `issuedAt`. */
 function monthRange(rows: IInflationRow[]): string[] {
-  const months = rows.map((r) => r.issuedAt.toISOString().slice(0, 7)).sort();
+  const months = rows.map((r) => monthKey(r.issuedAt)).sort();
   const first = months[0];
   const last = months[months.length - 1];
   const out: string[] = [];
@@ -125,7 +135,9 @@ function monthRange(rows: IInflationRow[]): string[] {
   while (true) {
     const cur = `${y}-${String(m).padStart(2, '0')}`;
     out.push(cur);
-    if (cur === last) break;
+    if (cur === last) {
+      break;
+    }
     m += 1;
     if (m > 12) {
       m = 1;
@@ -144,7 +156,9 @@ export function computeMonthlyInflationSeries(
   rows: IInflationRow[],
   ipca: IIpcaSeriesPoint[],
 ): IInflationSeriesPoint[] {
-  if (rows.length === 0) return [];
+  if (rows.length === 0) {
+    return [];
+  }
 
   const byItem = new Map<string, IInflationRow[]>();
   for (const r of rows) {
@@ -169,15 +183,21 @@ export function computeMonthlyInflationSeries(
     let weight = 0;
     let weighted = 0;
     for (const [, list] of byItem) {
-      const upto = list.filter((r) => r.issuedAt.toISOString().slice(0, 7) <= month);
-      if (upto.length < 2) continue;
+      const upto = list.filter((r) => monthKey(r.issuedAt) <= month);
+      if (upto.length < 2) {
+        continue;
+      }
       const first = upto[0].unitValue;
       const last = upto[upto.length - 1].unitValue;
-      if (first === 0) continue;
+      if (first === 0) {
+        continue;
+      }
       weight += last;
       weighted += ((last - first) / first) * last;
     }
-    if (ipcaByMonth.has(month)) lastIpca = ipcaByMonth.get(month) as number;
+    if (ipcaByMonth.has(month)) {
+      lastIpca = ipcaByMonth.get(month) as number;
+    }
     out.push({ month, personalPct: weight === 0 ? 0 : weighted / weight, ipcaPct: lastIpca });
   }
   return out;
@@ -187,6 +207,9 @@ export function computeMonthlyInflationSeries(
 
 export interface ICategoryInflation {
   category: string;
+  /** Ícone/cor do primeiro item do grupo — o agrupamento continua sendo por nome. */
+  icon?: string | null;
+  color?: string | null;
   index: number;
   itemCount: number;
 }
@@ -209,7 +232,13 @@ export function groupInflationByCategory(items: IInflationItem[]): ICategoryInfl
       weightTotal === 0
         ? 0
         : list.reduce((acc, i) => acc + i.variationPct * i.lastValue, 0) / weightTotal;
-    result.push({ category, index, itemCount: list.length });
+    result.push({
+      category,
+      icon: list[0].categoryIcon,
+      color: list[0].categoryColor,
+      index,
+      itemCount: list.length,
+    });
   }
 
   return result.sort((a, b) => b.index - a.index);

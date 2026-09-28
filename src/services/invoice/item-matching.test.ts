@@ -40,7 +40,7 @@ describe('findOrCreateItem — atalho por EAN', () => {
       reference_code: '10063021',
       name: 'NOME TOTALMENTE DIFERENTE',
       unit: 'UN',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 999,
     });
 
@@ -66,6 +66,52 @@ describe('findOrCreateItem — atalho por EAN', () => {
     expect(id).toBe('novo');
   });
 
+  it('ignora EAN zerado e de balança (não funde produtos de lojas diferentes)', async () => {
+    for (const ean of ['0000000000000', '2001234000000']) {
+      tx.item.findMany.mockClear();
+      await findOrCreateItem(tx, {
+        type: 'product',
+        reference_code: '22071090',
+        name: 'PRODUTO A GRANEL',
+        unit: 'KG',
+        ean,
+        unitValue: 10,
+      });
+      expect(tx.item.findMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it('busca o EAN pelas variantes UPC-A × EAN-13', async () => {
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'item-13',
+        reference_code: '',
+        name: 'X',
+        deleted_at: null,
+        ignored_at: null,
+        ean: '0036000291452',
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'QUALQUER',
+      unit: 'UN',
+      ean: '036000291452',
+      unitValue: 5,
+    });
+
+    expect(id).toBe('item-13');
+    expect(tx.item.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ean: { in: expect.arrayContaining(['036000291452', '0036000291452']) },
+        }),
+      }),
+    );
+  });
+
   it('faz backfill do EAN em item casado por nome que ainda não tem GTIN', async () => {
     tx.$queryRaw.mockResolvedValue([
       { id: 'item-nome', name: 'ARROZ TIPO 1 5KG', sim: 0.95, median_price: 25.0, ean: null },
@@ -76,14 +122,14 @@ describe('findOrCreateItem — atalho por EAN', () => {
       reference_code: '10063021',
       name: 'ARROZ TIPO 1 5KG',
       unit: 'UN',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 25.9,
     });
 
     expect(id).toBe('item-nome');
     expect(tx.item.update).toHaveBeenCalledWith({
       where: { id: 'item-nome' },
-      data: { ean: '7891234567890' },
+      data: { ean: '7891234567895' },
     });
   });
 
@@ -153,7 +199,7 @@ describe('findOrCreateItem — atalho por EAN', () => {
       reference_code: '10063021',
       name: 'OUTRO NOME QUALQUER',
       unit: 'UN',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 25.9,
     });
 
@@ -414,7 +460,7 @@ describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () =>
       reference_code: '22071090',
       name: 'NOME QUE VEIO NA NOTA',
       unit: 'L',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 3.68,
     });
 
@@ -439,7 +485,7 @@ describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () =>
       reference_code: '22071090',
       name: 'ETANOL COMUM',
       unit: 'L',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 3.68,
     });
 

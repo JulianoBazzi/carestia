@@ -5,10 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { LuLogOut, LuMoon, LuSun, LuUser } from 'react-icons/lu';
 import { useColorMode } from '~/components/ui/color-mode';
+import { logout } from '~/lib/auth/client-session';
 
 function initials(name: string, email: string): string {
   const source = name.trim() || email.trim();
-  if (!source) return '?';
+  if (!source) {
+    return '?';
+  }
   const parts = source.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -24,9 +27,7 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
 
   async function onLogout() {
     setLoading(true);
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.replace('/login');
-    router.refresh();
+    await logout();
   }
 
   return (

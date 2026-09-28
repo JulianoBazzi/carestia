@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { isCatalogGtin } from '~/lib/ean';
 
 export type InvoiceType = 'nfe' | 'nfce' | 'nfse' | 'nf3e';
 
@@ -25,6 +26,8 @@ export interface IItemDTO {
   quantity: string; // raw decimal
   unitValue: string; // raw decimal
   totalValue: string; // raw decimal
+  /** Tributo aproximado por unidade (R$/un); undefined quando o emitente não informa. */
+  unitTaxValue?: string;
 }
 
 export interface IInvoiceLocation {
@@ -61,7 +64,9 @@ const parser = new XMLParser({
 
 /** Normaliza um nó que pode ser objeto único ou array para sempre array. */
 function toArray<T>(value: T | T[] | undefined): T[] {
-  if (value === undefined || value === null) return [];
+  if (value === undefined || value === null) {
+    return [];
+  }
   return Array.isArray(value) ? value : [value];
 }
 
@@ -70,13 +75,35 @@ function str(value: unknown): string {
 }
 
 /**
- * Normaliza o cEAN da NF-e para um GTIN válido ou `undefined`. A NF-e usa o
- * literal `"SEM GTIN"` quando o produto não tem código de barras (combustíveis,
- * granéis, etc.); só aceitamos EAN-8/12/13/14 (dígitos).
+ * Normaliza o cEAN da NF-e para um GTIN de catálogo ou `undefined`. A NF-e usa
+ * o literal `"SEM GTIN"` quando o produto não tem código de barras
+ * (combustíveis, granéis, etc.); além do tamanho, exige dígito verificador e
+ * descarta código zerado e faixas de circulação restrita (`isCatalogGtin`) —
+ * esses códigos se repetem entre lojas e fundiriam produtos diferentes.
  */
 export function validEan(value: unknown): string | undefined {
   const s = str(value).trim();
-  return /^\d{8}$|^\d{12,14}$/.test(s) ? s : undefined;
+  return isCatalogGtin(s) ? s : undefined;
+}
+
+/**
+ * Tributo aproximado POR UNIDADE a partir do `<vTotTrib>` da linha (total em R$
+ * daquela linha, Lei 12.741/2012) dividido pela quantidade comercial.
+ * `undefined` quando o emitente não publica a tag (ela é opcional no layout) ou
+ * quando não há quantidade válida para dividir.
+ * Privacy-first: só o unitário sai daqui — o total da linha não é persistido.
+ */
+export function unitTaxFromDet(vTotTrib: unknown, qCom: unknown): string | undefined {
+  const raw = str(vTotTrib).trim();
+  if (!raw) {
+    return undefined;
+  }
+  const total = Number(raw);
+  const qty = Number(str(qCom));
+  if (!Number.isFinite(total) || !(qty > 0)) {
+    return undefined;
+  }
+  return String(total / qty);
 }
 
 /** NF-e (modelo 55) e NFC-e (modelo 65) compartilham a mesma estrutura; o modelo
@@ -88,31 +115,47 @@ function nfeModel(infNFe: { ide?: { mod?: unknown } } | undefined): 'nfe' | 'nfc
 export function detectType(xml: string): InvoiceType {
   const obj = parser.parse(xml);
   const infNFe = obj.nfeProc?.NFe?.infNFe ?? obj.NFe?.infNFe;
-  if (infNFe) return nfeModel(infNFe);
-  if (obj.nf3eProc || obj.NF3e) return 'nf3e';
-  if (obj.NFSe) return 'nfse';
+  if (infNFe) {
+    return nfeModel(infNFe);
+  }
+  if (obj.nf3eProc || obj.NF3e) {
+    return 'nf3e';
+  }
+  if (obj.NFSe) {
+    return 'nfse';
+  }
   throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e e NFS-e.');
 }
 
 export function parseXml(xml: string): IParsedInvoice {
   const obj = parser.parse(xml);
-  if (obj.nfeProc || obj.NFe) return parseNFe(obj);
-  if (obj.nf3eProc || obj.NF3e) return parseNF3e(obj);
-  if (obj.NFSe) return parseNFSe(obj);
+  if (obj.nfeProc || obj.NFe) {
+    return parseNFe(obj);
+  }
+  if (obj.nf3eProc || obj.NF3e) {
+    return parseNF3e(obj);
+  }
+  if (obj.NFSe) {
+    return parseNFSe(obj);
+  }
   throw new Error('XML não reconhecido como NF-e, NFC-e, NF3e e NFS-e.');
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: estrutura XML dinâmica
 export function parseNFe(obj: any): IParsedInvoice {
   const infNFe = obj.nfeProc?.NFe?.infNFe ?? obj.NFe?.infNFe;
-  if (!infNFe) throw new Error('infNFe ausente no XML da NF-e.');
+  if (!infNFe) {
+    throw new Error('infNFe ausente no XML da NF-e.');
+  }
 
   const emit = infNFe.emit;
   const addr = emit.enderEmit ?? {};
   const accessKey = str(infNFe['@_Id']).replace(/^NFe/, '');
 
   const company: ICompanyDTO = {
-    document: str(emit.CNPJ),
+    // Emitente pessoa física (produtor rural, MEI) vem com CPF no lugar do CNPJ;
+    // sem isso todos cairiam numa mesma "empresa" de documento vazio.
+    document: str(emit.CNPJ ?? emit.CPF),
     socialName: str(emit.xNome),
     fantasyName: emit.xFant ? str(emit.xFant) : undefined,
     neighborhood: addr.xBairro ? str(addr.xBairro) : undefined,
@@ -133,6 +176,7 @@ export function parseNFe(obj: any): IParsedInvoice {
       quantity: str(prod.qCom),
       unitValue: str(prod.vUnCom),
       totalValue: str(prod.vProd),
+      unitTaxValue: unitTaxFromDet(det.imposto?.vTotTrib, prod.qCom),
     };
   });
 
@@ -151,7 +195,9 @@ export function parseNFe(obj: any): IParsedInvoice {
 // biome-ignore lint/suspicious/noExplicitAny: estrutura XML dinâmica
 export function parseNFSe(obj: any): IParsedInvoice {
   const inf = obj.NFSe.infNFSe;
-  if (!inf) throw new Error('infNFSe ausente no XML da NFS-e.');
+  if (!inf) {
+    throw new Error('infNFSe ausente no XML da NFS-e.');
+  }
 
   const emit = inf.emit;
   const addr = emit.enderNac ?? {};
@@ -196,10 +242,18 @@ export function parseNFSe(obj: any): IParsedInvoice {
 /** Rótulo padrão por família de cClass da NF3e (usado quando não há descrição no item). */
 export function cClassLabel(cClass: string): string {
   const g = cClass.slice(0, 3);
-  if (g === '060') return 'Consumo de energia elétrica';
-  if (cClass.startsWith('56')) return 'Energia injetada (GD)';
-  if (g === '064') return 'Adicional de bandeira tarifária';
-  if (g === '080') return 'Contribuição de Iluminação Pública';
+  if (g === '060') {
+    return 'Consumo de energia elétrica';
+  }
+  if (cClass.startsWith('56')) {
+    return 'Energia injetada (GD)';
+  }
+  if (g === '064') {
+    return 'Adicional de bandeira tarifária';
+  }
+  if (g === '080') {
+    return 'Contribuição de Iluminação Pública';
+  }
   return 'Item da conta de energia';
 }
 
@@ -215,7 +269,9 @@ export function cClassLabel(cClass: string): string {
  */
 export function parseNF3e(obj: any): IParsedInvoice {
   const infNF3e = obj.nf3eProc?.NF3e?.infNF3e ?? obj.NF3e?.infNF3e;
-  if (!infNF3e) throw new Error('infNF3e ausente no XML da NF3e.');
+  if (!infNF3e) {
+    throw new Error('infNF3e ausente no XML da NF3e.');
+  }
 
   const emit = infNF3e.emit ?? {};
   const addr = emit.enderEmit ?? {};
@@ -250,7 +306,9 @@ export function parseNF3e(obj: any): IParsedInvoice {
     const vItem = str(di.vItem ?? di.vProd ?? '0');
     // Sem quantidade faturada válida não há como calcular R$/kWh. Pular a linha —
     // gravar o TOTAL como se fosse preço unitário poluiria a série de energia.
-    if (!(qFaturada > 0)) return [];
+    if (!(qFaturada > 0)) {
+      return [];
+    }
     // Preço unitário R$/kWh = valor do item ÷ quantidade faturada.
     const unitValue = String(Number(vItem) / qFaturada);
     return [

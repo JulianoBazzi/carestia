@@ -18,8 +18,12 @@ const NO_UPPER_TYPES = new Set([
  * Default ON para texto livre; opt-out via prop `uppercase={false}` ou pelo `type`.
  */
 export function shouldUppercase(uppercase: boolean | undefined, type?: string): boolean {
-  if (uppercase === false) return false;
-  if (type && NO_UPPER_TYPES.has(type)) return false;
+  if (uppercase === false) {
+    return false;
+  }
+  if (type && NO_UPPER_TYPES.has(type)) {
+    return false;
+  }
   return true;
 }
 
@@ -31,7 +35,9 @@ export function wrapUppercase<T extends HTMLInputElement | HTMLTextAreaElement>(
   onChange: ((e: ChangeEvent<T>) => void) | undefined,
   active: boolean,
 ): ((e: ChangeEvent<T>) => void) | undefined {
-  if (!active || !onChange) return onChange;
+  if (!active || !onChange) {
+    return onChange;
+  }
   return (e) => {
     e.target.value = toUpperLive(e.target.value);
     onChange(e);

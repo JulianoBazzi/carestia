@@ -42,7 +42,7 @@ describe('parseXml NFC-e (mod 65)', () => {
   });
 
   it('captura o cEAN como GTIN válido', () => {
-    expect(parsed.items[0].ean).toBe('7891234567890');
+    expect(parsed.items[0].ean).toBe('7891234567895');
   });
 });
 
@@ -105,6 +105,22 @@ describe('parseXml NF-e', () => {
 
   it('deixa ean undefined quando cEAN é "SEM GTIN"', () => {
     expect(parsed.items[0].ean).toBeUndefined();
+  });
+
+  it('deriva o tributo aproximado por unidade de vTotTrib ÷ qCom', () => {
+    // 34.81 (total da linha) / 38.4520 L ≈ 0.9053 R$/L
+    expect(Number(parsed.items[0].unitTaxValue)).toBeCloseTo(0.9053, 4);
+  });
+
+  it('deixa unitTaxValue undefined quando o emitente não publica vTotTrib', () => {
+    // A tag é opcional: muitos emitentes cumprem a Lei 12.741 só via infCpl.
+    const semTrib = nfe.replace('<vTotTrib>34.81</vTotTrib>', '');
+    expect(parseXml(semTrib).items[0].unitTaxValue).toBeUndefined();
+  });
+
+  it('deixa unitTaxValue undefined quando não há qCom para dividir', () => {
+    const semQtd = nfe.replace('<qCom>38.4520</qCom>', '<qCom>0</qCom>');
+    expect(parseXml(semQtd).items[0].unitTaxValue).toBeUndefined();
   });
 });
 

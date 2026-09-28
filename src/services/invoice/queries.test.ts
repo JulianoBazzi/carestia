@@ -5,8 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // expõe os delegates direto no client.
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
-    invoice: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+    invoice: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    },
     invoiceItem: { deleteMany: vi.fn(), createMany: vi.fn() },
+    // delete só é usado pela purga de nota soft-deletada.
     item: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
     itemAlias: { findUnique: vi.fn() },
     $queryRaw: vi.fn(),
@@ -28,8 +35,14 @@ const baseData = {
   ],
 };
 
+/** Nota existente do usuário (sem linhas, sem local) — sobrescreva o que precisar. */
+function existingInvoice(overrides: Record<string, unknown> = {}) {
+  return { id: 'inv-1', city: null, state: null, ibge_code: null, items: [], ...overrides };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.invoice.findUnique.mockResolvedValue(null);
   prismaMock.$queryRaw.mockResolvedValue([]); // sem candidato parecido → cria via upsert
   prismaMock.item.findMany.mockResolvedValue([]); // nenhum item com o mesmo EAN
   prismaMock.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
@@ -54,7 +67,7 @@ describe('updateInvoice', () => {
   });
 
   it('reconcilia recriando os invoice_items (delete + recreate) preservando o preço em R$', async () => {
-    prismaMock.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
+    prismaMock.invoice.findFirst.mockResolvedValue(existingInvoice());
 
     const result = await updateInvoice('user-1', 'inv-1', baseData);
 
@@ -82,8 +95,77 @@ describe('updateInvoice', () => {
     ]);
   });
 
+  it('linha inalterada conserva o item casado e o tributo, sem re-casar', async () => {
+    prismaMock.invoice.findFirst.mockResolvedValue(
+      existingInvoice({
+        items: [
+          {
+            id: 'line-1',
+            item_id: 'item-do-ean',
+            description: 'ARROZ',
+            unit: 'UN',
+            unit_tax_value: 0.9053,
+            item: { reference_code: '1006' },
+          },
+        ],
+      }),
+    );
+
+    await updateInvoice('user-1', 'inv-1', {
+      ...baseData,
+      items: [{ ...baseData.items[0], lineId: 'line-1', unitValue: 26.5 }, baseData.items[1]],
+    });
+
+    const rows = prismaMock.invoiceItem.createMany.mock.calls[0][0].data;
+    expect(rows[0]).toMatchObject({
+      item_id: 'item-do-ean',
+      unit_value: 26.5,
+      unit_tax_value: 0.9053,
+    });
+    // Só a linha nova passa pelo matching; linha digitada à mão não tem tributo.
+    expect(prismaMock.item.upsert).toHaveBeenCalledTimes(1);
+    expect(rows[1].unit_tax_value).toBeNull();
+  });
+
+  it('linha com descrição alterada volta ao matching', async () => {
+    prismaMock.invoice.findFirst.mockResolvedValue(
+      existingInvoice({
+        items: [
+          {
+            id: 'line-1',
+            item_id: 'item-antigo',
+            description: 'ARROZ INTEGRAL',
+            unit: 'UN',
+            unit_tax_value: null,
+            item: { reference_code: '1006' },
+          },
+        ],
+      }),
+    );
+
+    await updateInvoice('user-1', 'inv-1', {
+      ...baseData,
+      items: [{ ...baseData.items[0], lineId: 'line-1' }],
+    });
+
+    const rows = prismaMock.invoiceItem.createMany.mock.calls[0][0].data;
+    expect(rows[0].item_id).toBe('item-x');
+  });
+
+  it('recalcula o IBGE quando a cidade muda e mantém quando não muda', async () => {
+    prismaMock.invoice.findFirst.mockResolvedValue(
+      existingInvoice({ city: 'CUIABA', state: 'MT', ibge_code: '5103403' }),
+    );
+    await updateInvoice('user-1', 'inv-1', { ...baseData, city: 'Porto Alegre', state: 'RS' });
+    expect(prismaMock.invoice.update.mock.calls[0][0].data.ibge_code).toBe('4314902');
+
+    prismaMock.invoice.update.mockClear();
+    await updateInvoice('user-1', 'inv-1', { ...baseData, city: 'Cuiabá', state: 'MT' });
+    expect(prismaMock.invoice.update.mock.calls[0][0].data.ibge_code).toBe('5103403');
+  });
+
   it('deriva o tipo do item a partir do modelo (nf3e → energy)', async () => {
-    prismaMock.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
+    prismaMock.invoice.findFirst.mockResolvedValue(existingInvoice());
 
     await updateInvoice('user-1', 'inv-1', { ...baseData, model: 'nf3e' });
 
@@ -101,7 +183,7 @@ describe('itens ignorados (bloqueio permanente)', () => {
   };
 
   it('updateInvoice rejeita linha que casa um item ignorado, sem escrever nada', async () => {
-    prismaMock.invoice.findFirst.mockResolvedValue({ id: 'inv-1' });
+    prismaMock.invoice.findFirst.mockResolvedValue(existingInvoice());
     prismaMock.item.findUnique.mockResolvedValue(ignored);
 
     await expect(updateInvoice('user-1', 'inv-1', baseData)).rejects.toThrow(
@@ -138,5 +220,18 @@ describe('createInvoiceManual', () => {
       unit_value: 25.9,
       description: 'ARROZ',
     });
+  });
+
+  it('libera a chave de uma nota excluída antes de recriar', async () => {
+    prismaMock.invoice.findUnique.mockResolvedValue({ id: 'old', deleted_at: new Date() });
+    prismaMock.invoice.delete.mockReturnValue('purge-invoice-op');
+
+    await createInvoiceManual('user-1', { ...baseData, companyId: 'company-1', accessKey: 'k' });
+
+    expect(prismaMock.invoiceItem.deleteMany).toHaveBeenCalledWith({
+      where: { invoice_id: 'old' },
+    });
+    expect(prismaMock.invoice.delete).toHaveBeenCalledWith({ where: { id: 'old' } });
+    expect(prismaMock.invoice.create).toHaveBeenCalledTimes(1);
   });
 });
