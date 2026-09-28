@@ -4,6 +4,7 @@ import { getSession } from '~/lib/auth/current-user';
 import { hashPassword, verifyPassword } from '~/lib/auth/password';
 import { parseBody, safeRoute } from '~/lib/http';
 import prisma from '~/lib/prisma';
+import { enforceRateLimit } from '~/lib/rate-limit';
 import { changePasswordSchema } from '~/schemas/account';
 
 export const runtime = 'nodejs';
@@ -12,6 +13,13 @@ export const POST = safeRoute(async (req: Request) => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ message: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
+  }
+  // Sem limite, um cookie roubado permitiria testar senhas atuais à vontade.
+  const limited = enforceRateLimit(req, 'account-password', 10, 15 * 60 * 1000, session, {
+    by: 'user',
+  });
+  if (limited) {
+    return limited;
   }
 
   const body = await req.json().catch(() => ({}));

@@ -2,22 +2,22 @@ import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { hashPassword } from '~/lib/auth/password';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
+import { safeRoute } from '~/lib/http';
 import { newId } from '~/lib/id';
 import { normalizeName } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
 import { enforceRateLimit } from '~/lib/rate-limit';
+import { isRegistrationOpen } from '~/lib/registration';
 import { firstIssue, registerSchema } from '~/schemas/auth';
 
-// Beta fechado: novos cadastros estão desabilitados neste primeiro momento.
-// Para reabrir, defina REGISTRATION_OPEN=true no ambiente.
-const REGISTRATION_OPEN = process.env.REGISTRATION_OPEN === 'true';
-
-export async function POST(req: Request) {
+export const POST = safeRoute(async (req: Request) => {
   // Anti-abuso: 5 cadastros por IP por hora.
   const limited = enforceRateLimit(req, 'register', 5, 60 * 60 * 1000);
-  if (limited) return limited;
+  if (limited) {
+    return limited;
+  }
 
-  if (!REGISTRATION_OPEN) {
+  if (!isRegistrationOpen()) {
     return NextResponse.json(
       {
         message: 'A Carestia está em beta fechado e não está aceitando novos cadastros no momento.',
@@ -76,4 +76,4 @@ export async function POST(req: Request) {
     maxAge: 60 * 60 * 24 * 7,
   });
   return res;
-}
+});

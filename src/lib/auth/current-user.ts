@@ -10,12 +10,16 @@ export { isAdmin } from '~/lib/auth/admin';
 export async function getSession(): Promise<ISessionPayload | null> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
   return verifyToken(token);
 }
 
 export async function requireUserId(): Promise<string> {
   const session = await getSession();
-  if (!session) throw new Error('Não autenticado.');
+  if (!session) {
+    throw new Error('Não autenticado.');
+  }
   return session.sub;
 }

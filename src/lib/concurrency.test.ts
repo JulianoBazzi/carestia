@@ -38,7 +38,9 @@ describe('mapPool', () => {
     await expect(
       mapPool([1, 2, 3, 4], 2, async (n) => {
         started.push(n);
-        if (n === 1) throw new Error('boom');
+        if (n === 1) {
+          throw new Error('boom');
+        }
         await sleep(5);
         return n;
       }),

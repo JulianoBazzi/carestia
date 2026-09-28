@@ -29,7 +29,9 @@ export async function POST(req: Request) {
   // Rota só-admin e admin é isento do rate limit — a trava fica como salvaguarda
   // caso o acesso deixe de ser restrito a admins.
   const limited = enforceRateLimit(req, 'categorize', 20, 60 * 60 * 1000, session);
-  if (limited) return limited;
+  if (limited) {
+    return limited;
+  }
 
   if (!isAiEnabled()) {
     return NextResponse.json(

@@ -1,19 +1,16 @@
 'use client';
 
 import { Button } from '@chakra-ui/react';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { LuLogOut } from 'react-icons/lu';
+import { logout } from '~/lib/auth/client-session';
 
 export function LogoutButton() {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   async function onLogout() {
     setLoading(true);
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.replace('/login');
-    router.refresh();
+    await logout();
   }
 
   return (

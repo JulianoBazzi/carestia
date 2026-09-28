@@ -1,9 +1,10 @@
 import { Box, Button, Circle, Link as CLink, Flex, Heading, HStack } from '@chakra-ui/react';
 import NextLink from 'next/link';
-import { LuTrendingUp } from 'react-icons/lu';
+import { LuScanLine, LuTrendingUp } from 'react-icons/lu';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
+import { isRegistrationOpen } from '~/lib/registration';
 
-/** Cabeçalho das páginas públicas (Início, Termos, Privacidade). */
+/** Cabeçalho das páginas públicas (Início, Scanner, Termos, Privacidade). */
 export function PublicHeader() {
   return (
     <Box
@@ -34,13 +35,26 @@ export function PublicHeader() {
             </HStack>
           </NextLink>
         </CLink>
-        <HStack gap={2}>
+        <HStack gap={{ base: 1, md: 2 }}>
           <Button asChild variant="ghost" size="sm">
-            <NextLink href="/login">Entrar</NextLink>
+            <NextLink href="/scanner">
+              <LuScanLine /> Scanner
+            </NextLink>
           </Button>
-          <PrimaryButton size="sm" asChild>
-            <NextLink href="/register">Criar conta</NextLink>
-          </PrimaryButton>
+          {isRegistrationOpen() ? (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <NextLink href="/login">Entrar</NextLink>
+              </Button>
+              <PrimaryButton size="sm" asChild>
+                <NextLink href="/register">Criar conta</NextLink>
+              </PrimaryButton>
+            </>
+          ) : (
+            <PrimaryButton size="sm" asChild>
+              <NextLink href="/login">Entrar</NextLink>
+            </PrimaryButton>
+          )}
         </HStack>
       </Flex>
     </Box>

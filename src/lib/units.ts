@@ -137,8 +137,14 @@ const CANONICAL_UNITS = new Set(Object.values(UNIT_ALIASES));
  */
 export function normalizeUnit(value?: string | null): string | null {
   const n = normalizeName(value);
-  if (!n) return null;
-  if (UNIT_ALIASES[n]) return UNIT_ALIASES[n];
-  if (n.endsWith('1') && CANONICAL_UNITS.has(n.slice(0, -1))) return n.slice(0, -1);
+  if (!n) {
+    return null;
+  }
+  if (UNIT_ALIASES[n]) {
+    return UNIT_ALIASES[n];
+  }
+  if (n.endsWith('1') && CANONICAL_UNITS.has(n.slice(0, -1))) {
+    return n.slice(0, -1);
+  }
   return n;
 }

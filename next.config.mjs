@@ -1,10 +1,55 @@
 import withPWAInit from 'next-pwa';
 
+const DAY = 24 * 60 * 60;
+
+// Cache do service worker. Os defaults do next-pwa guardam por 24h todo
+// `GET /api/*` e todas as páginas — ou seja, notas e índice pessoal ficariam no
+// disco do aparelho mesmo após o logout (e apareceriam para a próxima pessoa em
+// um celular compartilhado, offline ou com rede lenta). Aqui só assets estáticos
+// e a API pública (sem dado pessoal) são cacheados; o resto do mesmo domínio vai
+// sempre à rede.
+const runtimeCaching = [
+  {
+    urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
+    handler: 'CacheFirst',
+    options: { cacheName: 'google-fonts', expiration: { maxEntries: 8, maxAgeSeconds: 365 * DAY } },
+  },
+  {
+    urlPattern: /\/_next\/static\/.*/i,
+    handler: 'CacheFirst',
+    options: { cacheName: 'next-static', expiration: { maxEntries: 256, maxAgeSeconds: 30 * DAY } },
+  },
+  {
+    urlPattern: /\.(?:png|jpe?g|svg|gif|webp|ico|woff2?|wasm)$/i,
+    handler: 'StaleWhileRevalidate',
+    options: { cacheName: 'static-assets', expiration: { maxEntries: 64, maxAgeSeconds: 7 * DAY } },
+  },
+  {
+    urlPattern: ({ url }) => self.origin === url.origin && url.pathname.startsWith('/api/public/'),
+    handler: 'NetworkFirst',
+    options: {
+      cacheName: 'public-api',
+      networkTimeoutSeconds: 10,
+      expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 },
+    },
+  },
+  {
+    urlPattern: ({ url }) => self.origin === url.origin,
+    handler: 'NetworkOnly',
+    options: { cacheName: 'network-only' },
+  },
+];
+
 const withPWA = withPWAInit({
   dest: 'public',
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+  // A start URL (`/`) muda conforme a sessão — não pode ir para o cache.
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
+  publicExcludes: ['!noprecache/**/*', '!icons/README.md'],
+  runtimeCaching,
 });
 
 // Cabeçalhos de segurança aplicados a todas as respostas. CSP completo (script/
@@ -18,7 +63,7 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   {
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()',
+    value: 'camera=(self), geolocation=(self), microphone=(), browsing-topics=()',
   },
   { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
 ];

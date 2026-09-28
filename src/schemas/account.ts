@@ -1,12 +1,13 @@
 import { z } from 'zod';
+import { zname, znewPassword } from '~/schemas/auth';
 
 export const updateAccountSchema = z.object({
-  name: z.string().trim().min(1, 'Nome é obrigatório.'),
+  name: zname(),
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Senha atual é obrigatória.'),
-  newPassword: z.string().min(6, 'Nova senha deve ter ao menos 6 caracteres.'),
+  currentPassword: z.string().min(1, 'Senha atual é obrigatória.').max(200, 'Senha inválida.'),
+  newPassword: znewPassword('Nova senha'),
 });
 
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;

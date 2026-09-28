@@ -37,7 +37,9 @@ function renderImport() {
     </Provider>,
   );
   const input = view.container.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) throw new Error('input de arquivo não encontrado');
+  if (!input) {
+    throw new Error('input de arquivo não encontrado');
+  }
   return { ...view, input };
 }
 

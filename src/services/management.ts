@@ -4,7 +4,20 @@ import { BusinessError } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { normalizeName, slugify } from '~/lib/normalize';
 import prisma from '~/lib/prisma';
+import { cacheDel } from '~/lib/redis';
 import { normalizeUnit } from '~/lib/units';
+
+// Invalida o cache de empresa (chave por documento) usado no import. Como as
+// mutações vêm por id, buscamos o documento antes de remover a chave.
+async function invalidateCompanyCache(id: string): Promise<void> {
+  const company = await prisma.company.findUnique({
+    where: { id },
+    select: { document: true },
+  });
+  if (company) {
+    await cacheDel(`company:${company.document}`);
+  }
+}
 
 export function listCategories() {
   return prisma.category.findMany({
@@ -13,20 +26,46 @@ export function listCategories() {
   });
 }
 
-export function createCategory(name: string, active = true) {
-  const normalized = normalizeName(name);
-  if (!normalized) throw new BusinessError('Nome obrigatório.');
+export interface ICategoryInput {
+  name: string;
+  active?: boolean;
+  /** Chave do registry em `~/lib/category-icons`. */
+  icon?: string | null;
+  /** colorPalette do Chakra. */
+  color?: string | null;
+}
+
+export function createCategory(data: ICategoryInput) {
+  const normalized = normalizeName(data.name);
+  if (!normalized) {
+    throw new BusinessError('Nome obrigatório.');
+  }
   return prisma.category.create({
-    data: { id: newId(), name: normalized, slug: slugify(name), active },
+    data: {
+      id: newId(),
+      name: normalized,
+      slug: slugify(data.name),
+      active: data.active ?? true,
+      icon: data.icon ?? null,
+      color: data.color ?? null,
+    },
   });
 }
 
-export async function updateCategory(id: string, name: string, active?: boolean): Promise<number> {
-  const normalized = normalizeName(name);
-  if (!normalized) throw new BusinessError('Nome obrigatório.');
+export async function updateCategory(id: string, data: ICategoryInput): Promise<number> {
+  const normalized = normalizeName(data.name);
+  if (!normalized) {
+    throw new BusinessError('Nome obrigatório.');
+  }
   const result = await prisma.category.updateMany({
     where: { id, deleted_at: null },
-    data: { name: normalized, slug: slugify(name), ...(active !== undefined && { active }) },
+    data: {
+      name: normalized,
+      slug: slugify(data.name),
+      ...(data.active !== undefined && { active: data.active }),
+      ...(data.icon !== undefined && { icon: data.icon }),
+      ...(data.color !== undefined && { color: data.color }),
+    },
   });
   return result.count;
 }
@@ -72,42 +111,56 @@ export async function setItemCategory(itemId: string, categoryId: string | null)
 }
 
 export interface IItemInput {
-  type: 'product' | 'service';
+  type: 'product';
   name: string;
-  reference_code: string;
+  /**
+   * NCM (produto) | cTribNac (serviço). OPCIONAL: a NFC-e consultada na
+   * Infosimples não expõe NCM, e esses itens entram no catálogo com o código
+   * vazio — exigi-lo aqui impediria renomear/categorizar um item importado sem
+   * inventar um NCM. O código continua podendo ser preenchido depois.
+   */
+  reference_code?: string | null;
+  /** EAN/GTIN comercial (só dígitos); vazio é gravado como null. */
+  ean?: string | null;
   category_id?: string | null;
   unit?: string | null;
 }
 
+/** Edição não altera o tipo de um item já existente (ver `updateItem`). */
+export type IItemUpdateInput = Omit<IItemInput, 'type'>;
+
 export function createItem(data: IItemInput) {
   const name = normalizeName(data.name);
-  if (!name) throw new BusinessError('Nome obrigatório.');
-  const reference_code = normalizeName(data.reference_code);
-  if (!reference_code) throw new BusinessError('Código de referência obrigatório.');
+  if (!name) {
+    throw new BusinessError('Nome obrigatório.');
+  }
+  const reference_code = normalizeName(data.reference_code) ?? '';
   return prisma.item.create({
     data: {
       id: newId(),
       type: data.type,
       name,
       reference_code,
+      ean: data.ean || null,
       category_id: data.category_id || null,
       unit: normalizeUnit(data.unit),
     },
   });
 }
 
-export async function updateItem(id: string, data: IItemInput): Promise<number> {
+export async function updateItem(id: string, data: IItemUpdateInput): Promise<number> {
   const name = normalizeName(data.name);
-  if (!name) throw new BusinessError('Nome obrigatório.');
-  const reference_code = normalizeName(data.reference_code);
-  if (!reference_code) throw new BusinessError('Código de referência obrigatório.');
+  if (!name) {
+    throw new BusinessError('Nome obrigatório.');
+  }
+  const reference_code = normalizeName(data.reference_code) ?? '';
   const result = await prisma.item.updateMany({
     where: { id, deleted_at: null },
     data: {
-      type: data.type,
       name,
       reference_code,
       category_id: data.category_id || null,
+      ...(data.ean !== undefined && { ean: data.ean || null }),
       ...(data.unit !== undefined && { unit: normalizeUnit(data.unit) }),
     },
   });
@@ -129,27 +182,39 @@ export async function ignoreItem(id: string): Promise<number> {
 }
 
 /**
- * Mescla dois itens: reaponta os invoice_items do `sourceId` para `targetId`,
+ * Mescla dois itens: reaponta os invoice_items e price_observations do `sourceId` para `targetId`,
  * grava a identidade do source como alias do target (para a importação cair no
  * target em vez de recriar a duplicata — ver `findOrCreateItem`), migra os
  * aliases que o source já tinha e REMOVE o source definitivamente.
  * Tudo em transação.
  */
 export async function mergeItems(sourceId: string, targetId: string): Promise<void> {
-  if (sourceId === targetId) throw new BusinessError('Itens iguais.');
+  if (sourceId === targetId) {
+    throw new BusinessError('Itens iguais.');
+  }
   // Impede mesclar PARA um item oculto/ignorado via API (a UI só lista ativos).
   const target = await prisma.item.findFirst({
     where: { id: targetId, deleted_at: null },
     select: { id: true, ean: true, nbs_code: true },
   });
-  if (!target) throw new BusinessError('Item de destino não encontrado.');
+  if (!target) {
+    throw new BusinessError('Item de destino não encontrado.');
+  }
   const source = await prisma.item.findUnique({
     where: { id: sourceId },
     select: { type: true, reference_code: true, name: true, ean: true, nbs_code: true },
   });
-  if (!source) throw new BusinessError('Item de origem não encontrado.');
+  if (!source) {
+    throw new BusinessError('Item de origem não encontrado.');
+  }
   await prisma.$transaction([
     prisma.invoiceItem.updateMany({
+      where: { item_id: sourceId },
+      data: { item_id: targetId },
+    }),
+    // Observações de preço (etiquetas) seguem o mesmo destino — o source é
+    // apagado fisicamente abaixo, então nada pode continuar apontando para ele.
+    prisma.priceObservation.updateMany({
       where: { item_id: sourceId },
       data: { item_id: targetId },
     }),
@@ -218,12 +283,16 @@ export function listItemAliases(itemId: string) {
  */
 export async function createItemAlias(itemId: string, name: string, referenceCode?: string | null) {
   const normalized = normalizeName(name);
-  if (!normalized) throw new BusinessError('Nome obrigatório.');
+  if (!normalized) {
+    throw new BusinessError('Nome obrigatório.');
+  }
   const item = await prisma.item.findFirst({
     where: { id: itemId, deleted_at: null },
     select: { type: true, reference_code: true },
   });
-  if (!item) throw new BusinessError('Item não encontrado.', 404);
+  if (!item) {
+    throw new BusinessError('Item não encontrado.', 404);
+  }
   const refCode = normalizeName(referenceCode) ?? item.reference_code;
   // Um alias com a identidade de um item ATIVO desviaria as importações dele —
   // o caminho certo nesse caso é a mesclagem (que oculta o item e cria o alias).
@@ -294,6 +363,9 @@ export async function updateCompany(id: string, data: ICompanyUpdate): Promise<n
     where: { id, deleted_at: null },
     data: normalizeCompanyData(data),
   });
+  if (result.count > 0) {
+    await invalidateCompanyCache(id);
+  }
   return result.count;
 }
 
@@ -303,9 +375,13 @@ export interface ICompanyCreate extends ICompanyUpdate {
 
 export function createCompany(data: ICompanyCreate) {
   const document = onlyNumbers(data.document);
-  if (!isValidCNPJ(document)) throw new BusinessError('CNPJ inválido.');
+  if (!isValidCNPJ(document)) {
+    throw new BusinessError('CNPJ inválido.');
+  }
   const normalized = normalizeCompanyData(data);
-  if (!normalized.social_name) throw new BusinessError('Razão social é obrigatória.');
+  if (!normalized.social_name) {
+    throw new BusinessError('Razão social é obrigatória.');
+  }
   return prisma.company.create({
     data: {
       id: newId(),
@@ -325,5 +401,8 @@ export async function deleteCompany(id: string): Promise<number> {
     where: { id, deleted_at: null },
     data: { deleted_at: new Date() },
   });
+  if (result.count > 0) {
+    await invalidateCompanyCache(id);
+  }
   return result.count;
 }

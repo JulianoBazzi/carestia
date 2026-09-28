@@ -42,7 +42,9 @@ export function ConfirmDialog({ ref }: { ref?: Ref<ConfirmDialogHandle> }) {
 
   async function handleConfirm() {
     const opts = optsRef.current;
-    if (!opts) return;
+    if (!opts) {
+      return;
+    }
     try {
       setLoading(true);
       await opts.onConfirm();

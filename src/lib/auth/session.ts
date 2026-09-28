@@ -42,7 +42,9 @@ export async function verifyToken(token: string): Promise<ISessionPayload | null
   try {
     // Fixa o algoritmo esperado — não aceitar nada além de HS256.
     const { payload } = await jwtVerify(token, secret(), { algorithms: [ALG] });
-    if (!payload.sub) return null;
+    if (!payload.sub) {
+      return null;
+    }
     return {
       sub: payload.sub,
       name: String(payload.name ?? ''),

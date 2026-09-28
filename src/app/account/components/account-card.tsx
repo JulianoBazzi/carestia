@@ -13,6 +13,7 @@ import { Input } from '~/components/Input';
 import { PasswordInput } from '~/components/Input/PasswordInput';
 import { API_URL_ACCOUNT } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
+import { logout } from '~/lib/auth/client-session';
 import { changePasswordSchema, updateAccountSchema } from '~/schemas/account';
 import { api } from '~/services/apiClient';
 
@@ -43,8 +44,7 @@ export function AccountCard({ name, email }: { name: string; email: string }) {
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(API_URL_ACCOUNT),
     onSuccess() {
-      router.replace('/login');
-      router.refresh();
+      return logout();
     },
     onError: (error: Error) => errorFeedbackToast('Conta', error),
   });

@@ -2,6 +2,7 @@
 
 import { Field, Skeleton } from '@chakra-ui/react';
 import { Select as ChakraReactSelect } from 'chakra-react-select';
+import type { ReactNode } from 'react';
 import type ISelectOption from '~/models/ISelectOption';
 
 export interface ISelectProps {
@@ -32,6 +33,8 @@ export interface ISelectProps {
   options: ISelectOption[];
   value?: string | null;
   onChange: (value: string | null) => void;
+  /** Render customizado da opção (menu e valor selecionado). */
+  formatOptionLabel?: (option: ISelectOption) => ReactNode;
 }
 
 /**
@@ -59,6 +62,7 @@ export function Select({
   options,
   value,
   onChange,
+  formatOptionLabel,
 }: ISelectProps) {
   const hasError = !!error;
 
@@ -89,6 +93,7 @@ export function Select({
           menuPlacement={menuPlacement}
           placeholder={placeholder}
           options={options}
+          {...(formatOptionLabel && { formatOptionLabel })}
           value={options.find((option) => option.value === value) ?? null}
           onChange={(option) => onChange(option?.value ?? null)}
           selectedOptionColorPalette="teal"

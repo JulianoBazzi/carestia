@@ -6,7 +6,9 @@ import { isAiEnabled } from '~/services/openai';
 
 export default async function ItemsPage() {
   const session = await getSession();
-  if (!session) redirect('/login');
+  if (!session) {
+    redirect('/login');
+  }
 
   const admin = isAdmin(session);
   return (

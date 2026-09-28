@@ -15,7 +15,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: StatusCodes.UNAUTHORIZED });
   }
   const limited = enforceRateLimit(req, 'import-pdf', 60, 60 * 60 * 1000, session);
-  if (limited) return limited;
+  if (limited) {
+    return limited;
+  }
 
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');

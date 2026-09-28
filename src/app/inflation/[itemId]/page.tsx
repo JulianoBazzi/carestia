@@ -9,7 +9,9 @@ export default async function ItemInflationPage({
   params: Promise<{ itemId: string }>;
 }) {
   const session = await getSession();
-  if (!session) redirect('/login');
+  if (!session) {
+    redirect('/login');
+  }
   const { itemId } = await params;
 
   return (

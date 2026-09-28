@@ -1,5 +1,6 @@
 import 'server-only';
 import type { Prisma } from '~/generated/prisma/client';
+import { eanCandidates } from '~/lib/ean';
 import { isUniqueViolation } from '~/lib/errors';
 import { newId } from '~/lib/id';
 import { matchKey, normalizeName } from '~/lib/normalize';
@@ -16,6 +17,20 @@ import { validEan } from '~/services/invoice/parser';
  * ("S-10", "S 10", "S10") já colapsam antes deste limiar. Calibrar contra dados reais.
  */
 export const PRODUCT_SIMILARITY_THRESHOLD = 0.6;
+
+/**
+ * Limiar para itens SEM código de referência (`reference_code = ''`) — caso da
+ * NFC-e consultada na Infosimples, que não expõe NCM.
+ *
+ * Mais rígido que o normal porque o 0.6 acima só é seguro por causa do NCM: ele
+ * restringe os candidatos a produtos da mesma classe fiscal ANTES da comparação
+ * por nome. No bucket vazio esse filtro não existe e todos os produtos sem
+ * código concorrem entre si, então nomes parecidos de produtos DIFERENTES
+ * ("ERVA TERERE UHDE MENTA" vs "ERVA TERERE UHDE LIMAO" — mesma unidade, mesmo
+ * pack, preço quase igual) passariam. Errar duplicando é reversível pela
+ * mesclagem manual; mesclar errado não é.
+ */
+export const NO_REFERENCE_SIMILARITY_THRESHOLD = 0.85;
 
 /**
  * Fator máximo de diferença de preço para aceitar que dois itens são o MESMO
@@ -36,15 +51,21 @@ const PACK_SIZE_RE = /(\d+(?:[.,]\d+)?)\s?(KG|G|MG|L|ML|KWH|UN|CX|PCT|PC|DZ)\b/g
  * automaticamente — o preço unitário é legitimamente diferente.
  */
 export function packSize(name: string | null | undefined): string | null {
-  if (!name) return null;
+  if (!name) {
+    return null;
+  }
   const upper = name.toUpperCase();
   const found: string[] = [];
   for (const m of upper.matchAll(PACK_SIZE_RE)) {
     const qty = Number(m[1].replace(',', '.'));
-    if (!Number.isFinite(qty)) continue;
+    if (!Number.isFinite(qty)) {
+      continue;
+    }
     found.push(`${qty}${m[2]}`);
   }
-  if (found.length === 0) return null;
+  if (found.length === 0) {
+    return null;
+  }
   return found.sort().join('+');
 }
 
@@ -69,7 +90,9 @@ export function priceWithinBand(
   median: number | null | undefined,
   factor: number,
 ): boolean {
-  if (value == null || value <= 0 || median == null || median <= 0) return true;
+  if (value == null || value <= 0 || median == null || median <= 0) {
+    return true;
+  }
   const ratio = value / median;
   return ratio >= 1 / factor && ratio <= factor;
 }
@@ -91,8 +114,12 @@ async function resolveAlias(
     where: { type_reference_code_name: { type, reference_code: referenceCode, name } },
     select: { item: { select: { id: true, deleted_at: true, ignored_at: true } } },
   });
-  if (!alias) return null;
-  if (alias.item.ignored_at) return { id: null };
+  if (!alias) {
+    return null;
+  }
+  if (alias.item.ignored_at) {
+    return { id: null };
+  }
   if (alias.item.deleted_at) {
     await tx.item.update({ where: { id: alias.item.id }, data: { deleted_at: null } });
   }
@@ -147,20 +174,24 @@ export async function findOrCreateItem(
   const ean = validEan(input.ean);
 
   // Atalho determinístico: mesmo código de barras = mesmo produto. Uma única
-  // query traz todos os itens com esse GTIN e a precedência é decidida em JS
-  // (menos round-trips — a importação roda fora de transação, mas cada query
-  // ainda custa uma ida ao banco remoto).
+  // query traz todos os itens com esse GTIN (incluindo as variantes UPC-A ×
+  // EAN-13 com zero à esquerda, que são o mesmo produto) e a precedência é
+  // decidida em JS (menos round-trips — a importação roda fora de transação,
+  // mas cada query ainda custa uma ida ao banco remoto).
   if (ean) {
-    const hits = await tx.item.findMany({
-      where: { type: input.type, ean },
+    const found = await tx.item.findMany({
+      where: { type: input.type, ean: { in: eanCandidates(ean) } },
       select: {
         id: true,
         reference_code: true,
         name: true,
         deleted_at: true,
         ignored_at: true,
+        ean: true,
       },
     });
+    // O código exatamente igual ao da nota vem primeiro.
+    const hits = [...found].sort((a, b) => Number(b.ean === ean) - Number(a.ean === ean));
     // Ativo: reaproveita direto, sem passar por nome/preço.
     const active = hits.find((h) => !h.deleted_at);
     if (active) {
@@ -236,9 +267,13 @@ export async function findOrCreateItem(
   // Mesma unidade + nome parecido não basta — "ARROZ 1KG" e "ARROZ 5KG" têm o
   // preço unitário legitimamente diferente e NÃO são o mesmo produto.
   const inputPack = packSize(input.name);
+  // Sem NCM não há pré-filtro por classe fiscal — exige-se mais do nome.
+  const threshold = referenceCode
+    ? PRODUCT_SIMILARITY_THRESHOLD
+    : NO_REFERENCE_SIMILARITY_THRESHOLD;
   const best = rows.find(
     (r) =>
-      Number(r.sim) >= PRODUCT_SIMILARITY_THRESHOLD &&
+      Number(r.sim) >= threshold &&
       packSize(r.name) === inputPack &&
       priceWithinBand(
         input.unitValue,
@@ -315,12 +350,16 @@ export async function findOrCreateItem(
     });
     return item.id;
   } catch (e) {
-    if (!isUniqueViolation(e)) throw e;
+    if (!isUniqueViolation(e)) {
+      throw e;
+    }
     const winner = await tx.item.findUnique({
       where: uniqueWhere,
       select: { id: true, deleted_at: true, ignored_at: true },
     });
-    if (!winner) throw e;
+    if (!winner) {
+      throw e;
+    }
     return adoptExisting(tx, winner);
   }
 }

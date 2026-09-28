@@ -23,6 +23,32 @@ export function invoiceModelInfo(model: IInvoiceAPI['model']): {
   }
 }
 
+/** Estados de uma chave na importação por chave de acesso (tela em lote e scanner). */
+export type KeyImportUiStatus =
+  | 'queued'
+  | 'consulting'
+  | 'imported'
+  | 'duplicated'
+  | 'not_found'
+  | 'error';
+
+const KEY_IMPORT_STATUS: Record<KeyImportUiStatus, { label: string; colorPalette: string }> = {
+  queued: { label: 'Aguardando', colorPalette: 'gray' },
+  consulting: { label: 'Consultando', colorPalette: 'blue' },
+  imported: { label: 'Importada', colorPalette: 'teal' },
+  duplicated: { label: 'Já importada', colorPalette: 'gray' },
+  not_found: { label: 'Não encontrada', colorPalette: 'orange' },
+  error: { label: 'Erro', colorPalette: 'red' },
+};
+
+/** Rótulo e cor do badge por estado da importação por chave. */
+export function keyImportStatusInfo(status: KeyImportUiStatus): {
+  label: string;
+  colorPalette: string;
+} {
+  return KEY_IMPORT_STATUS[status] ?? KEY_IMPORT_STATUS.error;
+}
+
 export function formatInvoice(invoice: IInvoiceAPI): IInvoiceAPI {
   return {
     ...invoice,

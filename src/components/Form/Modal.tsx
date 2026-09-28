@@ -49,7 +49,9 @@ export function Modal({
   }, [onOpenChange]);
 
   function handleCloseDialog() {
-    if (busy) return;
+    if (busy) {
+      return;
+    }
     onClose?.();
     onCloseDialog();
   }
@@ -60,7 +62,9 @@ export function Modal({
     <Dialog.Root
       open={open}
       onOpenChange={(details) => {
-        if (!details.open) handleCloseDialog();
+        if (!details.open) {
+          handleCloseDialog();
+        }
       }}
       closeOnEscape={!disableCloseButton && !busy}
       closeOnInteractOutside={false}

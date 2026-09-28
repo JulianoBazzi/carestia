@@ -40,7 +40,7 @@ describe('findOrCreateItem — atalho por EAN', () => {
       reference_code: '10063021',
       name: 'NOME TOTALMENTE DIFERENTE',
       unit: 'UN',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 999,
     });
 
@@ -66,6 +66,52 @@ describe('findOrCreateItem — atalho por EAN', () => {
     expect(id).toBe('novo');
   });
 
+  it('ignora EAN zerado e de balança (não funde produtos de lojas diferentes)', async () => {
+    for (const ean of ['0000000000000', '2001234000000']) {
+      tx.item.findMany.mockClear();
+      await findOrCreateItem(tx, {
+        type: 'product',
+        reference_code: '22071090',
+        name: 'PRODUTO A GRANEL',
+        unit: 'KG',
+        ean,
+        unitValue: 10,
+      });
+      expect(tx.item.findMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it('busca o EAN pelas variantes UPC-A × EAN-13', async () => {
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'item-13',
+        reference_code: '',
+        name: 'X',
+        deleted_at: null,
+        ignored_at: null,
+        ean: '0036000291452',
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '10063021',
+      name: 'QUALQUER',
+      unit: 'UN',
+      ean: '036000291452',
+      unitValue: 5,
+    });
+
+    expect(id).toBe('item-13');
+    expect(tx.item.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ean: { in: expect.arrayContaining(['036000291452', '0036000291452']) },
+        }),
+      }),
+    );
+  });
+
   it('faz backfill do EAN em item casado por nome que ainda não tem GTIN', async () => {
     tx.$queryRaw.mockResolvedValue([
       { id: 'item-nome', name: 'ARROZ TIPO 1 5KG', sim: 0.95, median_price: 25.0, ean: null },
@@ -76,14 +122,14 @@ describe('findOrCreateItem — atalho por EAN', () => {
       reference_code: '10063021',
       name: 'ARROZ TIPO 1 5KG',
       unit: 'UN',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 25.9,
     });
 
     expect(id).toBe('item-nome');
     expect(tx.item.update).toHaveBeenCalledWith({
       where: { id: 'item-nome' },
-      data: { ean: '7891234567890' },
+      data: { ean: '7891234567895' },
     });
   });
 
@@ -153,7 +199,7 @@ describe('findOrCreateItem — atalho por EAN', () => {
       reference_code: '10063021',
       name: 'OUTRO NOME QUALQUER',
       unit: 'UN',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 25.9,
     });
 
@@ -212,6 +258,111 @@ describe('findOrCreateItem — atalho por EAN', () => {
     });
 
     expect(id).toBe('item-5kg');
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('findOrCreateItem — itens sem NCM (NFC-e via Infosimples)', () => {
+  let tx: ReturnType<typeof makeTx>;
+  beforeEach(() => {
+    tx = makeTx();
+  });
+
+  it('exige mais similaridade quando não há NCM para filtrar', async () => {
+    // 0.7 casaria sob o mesmo NCM, mas no bucket vazio o NCM não pré-filtra
+    // nada — produtos diferentes de nome parecido chegariam até aqui.
+    tx.$queryRaw.mockResolvedValue([
+      {
+        id: 'item-limao',
+        name: 'ERVA TERERE UHDE LIMAO 500GR',
+        sim: 0.7,
+        median_price: 9.5,
+        ean: null,
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '',
+      name: 'ERVA TERERE UHDE MENTA BOLDO 500GR',
+      unit: 'UN',
+      ean: null,
+      unitValue: 9.99,
+    });
+
+    expect(id).toBe('novo');
+    expect(tx.item.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('casa acima de 0.85 mesmo sem NCM', async () => {
+    tx.$queryRaw.mockResolvedValue([
+      {
+        id: 'item-erva',
+        name: 'ERVA TERERE UHDE MENTA BOLDO 500GR',
+        sim: 0.95,
+        median_price: 9.5,
+        ean: null,
+      },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '',
+      name: 'ERVA TERERE UHDE MENTA E BOLDO 500GR',
+      unit: 'UN',
+      ean: null,
+      unitValue: 9.99,
+    });
+
+    expect(id).toBe('item-erva');
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('mantém 0.6 quando HÁ NCM (regressão do caminho XML)', async () => {
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'item-ncm', name: 'OLEO DIESEL S10', sim: 0.7, median_price: 6, ean: null },
+    ]);
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '22071090',
+      name: 'DIESEL B S-10 COMUM',
+      unit: 'L',
+      ean: null,
+      unitValue: 6.2,
+    });
+
+    expect(id).toBe('item-ncm');
+  });
+
+  it('o alias criado pela mesclagem intercepta a reimportação (chave com NCM vazio)', async () => {
+    // Fluxo desenhado: o admin mescla o item da NFC-e no item original; o nome
+    // vira alias com `reference_code = ''` e a próxima importação cai no principal.
+    tx.itemAlias.findUnique.mockResolvedValue({
+      item: { id: 'item-original', deleted_at: null, ignored_at: null },
+    });
+
+    const id = await findOrCreateItem(tx, {
+      type: 'product',
+      reference_code: '',
+      name: 'ERVA TERERE UHDE MENTA BOLDO - 500GR',
+      unit: 'UN',
+      ean: null,
+      unitValue: 9.99,
+    });
+
+    expect(id).toBe('item-original');
+    expect(tx.itemAlias.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          type_reference_code_name: {
+            type: 'product',
+            reference_code: '',
+            name: 'ERVA TERERE UHDE MENTA BOLDO - 500GR',
+          },
+        },
+      }),
+    );
     expect(tx.item.upsert).not.toHaveBeenCalled();
   });
 });
@@ -309,7 +460,7 @@ describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () =>
       reference_code: '22071090',
       name: 'NOME QUE VEIO NA NOTA',
       unit: 'L',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 3.68,
     });
 
@@ -334,7 +485,7 @@ describe('findOrCreateItem — nomes alternativos (aliases de mesclagem)', () =>
       reference_code: '22071090',
       name: 'ETANOL COMUM',
       unit: 'L',
-      ean: '7891234567890',
+      ean: '7891234567895',
       unitValue: 3.68,
     });
 

@@ -9,7 +9,8 @@ import {
   type IInflationRow,
 } from '~/services/invoice/analytics';
 
-const d = (s: string) => new Date(s);
+// Meio-dia em Brasília: notas reais sempre trazem o offset do emitente.
+const d = (s: string) => new Date(`${s}T12:00:00-03:00`);
 
 describe('computeMonthlyInflationSeries', () => {
   const rows: IInflationRow[] = [

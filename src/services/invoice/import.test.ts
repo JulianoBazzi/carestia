@@ -6,11 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // expõe os delegates direto; `tx` é mantido como alias para as asserções.
 const { tx, prismaMock, fetchCnpj } = vi.hoisted(() => {
   const tx = {
-    company: { upsert: vi.fn(), findUnique: vi.fn() },
+    company: { upsert: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     item: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
     itemAlias: { findUnique: vi.fn() },
-    invoice: { create: vi.fn() },
+    invoice: { create: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+    invoiceItem: { deleteMany: vi.fn() },
     $queryRaw: vi.fn(),
+    $transaction: vi.fn((ops: unknown[]) => Promise.all(ops)),
   };
   return { tx, prismaMock: tx, fetchCnpj: vi.fn() };
 });
@@ -37,6 +39,8 @@ beforeEach(() => {
   tx.item.findUnique.mockResolvedValue(null); // unique exata sem hit (nem zumbi nem ignorado)
   tx.itemAlias.findUnique.mockResolvedValue(null); // sem nome alternativo (alias de mesclagem)
   tx.company.upsert.mockResolvedValue({ id: 'company-1' });
+  tx.company.update.mockResolvedValue({ id: 'company-1' });
+  tx.invoice.findUnique.mockResolvedValue(null); // chave ainda não importada
   tx.company.findUnique.mockResolvedValue(null); // empresa ainda não cadastrada
   tx.item.upsert.mockResolvedValue({ id: 'item-1' });
   tx.invoice.create.mockResolvedValue({ id: 'invoice-1' });
@@ -63,10 +67,25 @@ describe('importInvoice — NF-e', () => {
     expect(invoiceArg.items.createMany.data[0].quantity).toBeUndefined();
     expect(invoiceArg.items.createMany.data[0].total_value).toBeUndefined();
     expect(invoiceArg.items.createMany.data[0].unit_value).toBeCloseTo(3.68); // R$/un
+    // O vTotTrib bruto (total da linha) nunca é persistido — só o derivado por unidade.
+    expect(invoiceArg.items.createMany.data[0].v_tot_trib).toBeUndefined();
+    expect(invoiceArg.items.createMany.data[0].tax_value).toBeUndefined();
 
     const itemArg = tx.item.upsert.mock.calls[0][0];
     expect(itemArg.create.type).toBe('product');
     expect(itemArg.create.reference_code).toBe('22071090');
+  });
+
+  it('grava o tributo aproximado por unidade quando a nota traz vTotTrib', async () => {
+    await importInvoice('user-1', nfe);
+    const line = tx.invoice.create.mock.calls[0][0].data.items.createMany.data[0];
+    expect(line.unit_tax_value).toBeCloseTo(0.9053, 4); // 34.81 / 38.4520 L
+  });
+
+  it('grava null quando o emitente não publica vTotTrib (tag opcional)', async () => {
+    await importInvoice('user-1', nfe.replace('<vTotTrib>34.81</vTotTrib>', ''));
+    const line = tx.invoice.create.mock.calls[0][0].data.items.createMany.data[0];
+    expect(line.unit_tax_value).toBeNull();
   });
 
   it('grava o local da compra (emitente) no nível da nota', async () => {
@@ -287,6 +306,19 @@ describe('importInvoice — erros', () => {
     });
   });
 
+  it('não vaza a mensagem de erro interno (Prisma/rede) ao usuário', async () => {
+    tx.company.upsert.mockRejectedValue(new Error('column "xyz" does not exist'));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await importInvoice('user-1', nfe);
+
+    expect(result).toEqual({
+      status: 'error',
+      message: 'Erro inesperado ao importar a nota. Tente novamente.',
+    });
+    spy.mockRestore();
+  });
+
   it('P2002 na resolução de item NÃO vira duplicated falso', async () => {
     // Corrida na criação do item: o upsert perde e a re-leitura pela unique
     // também não acha o vencedor (corrida fantasma) → o erro propaga como
@@ -297,5 +329,70 @@ describe('importInvoice — erros', () => {
 
     expect(result.status).toBe('error');
     expect(tx.invoice.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('importInvoice — reimportação e catálogo', () => {
+  it('chave ativa já importada é duplicated sem resolver empresa nem itens', async () => {
+    tx.invoice.findUnique.mockResolvedValue({ id: 'inv-old', deleted_at: null });
+
+    const result = await importInvoice('user-1', nfe);
+
+    expect(result.status).toBe('duplicated');
+    expect(tx.company.upsert).not.toHaveBeenCalled();
+    expect(tx.item.upsert).not.toHaveBeenCalled();
+  });
+
+  it('nota excluída (soft delete) é apagada de vez e reimportada', async () => {
+    tx.invoice.findUnique.mockResolvedValue({ id: 'inv-old', deleted_at: new Date('2026-07-01') });
+
+    const result = await importInvoice('user-1', nfe);
+
+    expect(result.status).toBe('imported');
+    expect(tx.invoiceItem.deleteMany).toHaveBeenCalledWith({ where: { invoice_id: 'inv-old' } });
+    expect(tx.invoice.delete).toHaveBeenCalledWith({ where: { id: 'inv-old' } });
+    expect(tx.invoice.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('não sobrescreve nomes da empresa existente; só completa campos vazios', async () => {
+    tx.company.upsert.mockResolvedValue({
+      id: 'company-1',
+      document: '12345678000199',
+      social_name: 'NOME ORIGINAL LTDA',
+      fantasy_name: 'ORIGINAL',
+      neighborhood: null,
+      city: null,
+      state: null,
+      ibge_code: null,
+      deleted_at: new Date('2026-01-01'),
+    });
+
+    await importInvoice('user-1', nfce);
+
+    expect(tx.company.upsert.mock.calls[0][0].update).toEqual({});
+    const data = tx.company.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      deleted_at: null,
+      neighborhood: 'CENTRO',
+      city: 'PORTO ALEGRE',
+      state: 'RS',
+      ibge_code: '4314902',
+    });
+    expect(data.social_name).toBeUndefined();
+    expect(data.fantasy_name).toBeUndefined();
+  });
+
+  it('descarta linhas com preço unitário zero', async () => {
+    const withZero = nfce.replace(
+      '</det>',
+      '</det><det nItem="2"><prod><NCM>22030000</NCM><xProd>BRINDE</xProd><uCom>UN</uCom><qCom>1.0000</qCom><vUnCom>0.00</vUnCom><vProd>0.00</vProd></prod></det>',
+    );
+
+    const result = await importInvoice('user-1', withZero);
+
+    expect(result).toMatchObject({ status: 'imported', invalidItems: 1 });
+    const rows = tx.invoice.create.mock.calls[0][0].data.items.createMany.data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].unit_value).toBe(5);
   });
 });

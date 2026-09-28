@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession } from '~/lib/auth/current-user';
+import { hashPassword } from '~/lib/auth/password';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import { parseBody, safeRoute } from '~/lib/http';
 import { normalizeName } from '~/lib/normalize';
@@ -46,7 +48,12 @@ export const PATCH = safeRoute(async (req: Request) => {
   return res;
 });
 
-/** Exclui a conta (soft-delete) e encerra a sessão. */
+/**
+ * Exclui a conta e encerra a sessão. Além do soft delete, ANONIMIZA a linha:
+ * nome e e-mail somem (o e-mail fica livre para um novo cadastro) e a senha vira
+ * o hash de um valor aleatório. As notas e observações ficam — são só preços
+ * unitários, sem nada que identifique a pessoa, e já alimentam o índice público.
+ */
 export const DELETE = safeRoute(async () => {
   const session = await getSession();
   if (!session) {
@@ -55,7 +62,13 @@ export const DELETE = safeRoute(async () => {
 
   await prisma.user.update({
     where: { id: session.sub },
-    data: { deleted_at: new Date(), active: false },
+    data: {
+      deleted_at: new Date(),
+      active: false,
+      name: '',
+      email: `deleted-${session.sub}@deleted.invalid`,
+      password: await hashPassword(randomUUID()),
+    },
   });
 
   const res = NextResponse.json({ ok: true });

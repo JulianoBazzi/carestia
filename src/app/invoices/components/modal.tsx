@@ -16,6 +16,7 @@ import { Input } from '~/components/Input';
 import { LoadingState } from '~/components/LoadingState';
 import { API_URL_INVOICES, TABLE_INFLATION, TABLE_INVOICES } from '~/config/constants';
 import { useFeedback } from '~/contexts/FeedbackContext';
+import { formatPrice, toDateInputValue } from '~/lib/format';
 import { maskAccessKey } from '~/lib/mask';
 import type ICompanyAPI from '~/models/Entity/Company/ICompanyAPI';
 import { api } from '~/services/apiClient';
@@ -38,10 +39,17 @@ type Model = 'nfe' | 'nfce' | 'nfse' | 'nf3e';
 
 interface ItemRow {
   _key: string;
+  /** Id da linha no banco (edição): o backend preserva o item casado se nada mudou. */
+  id?: string;
   description: string;
   reference_code: string;
   unit: string;
   unit_value: string;
+  /**
+   * Tributo aproximado por unidade (R$/un), só das notas importadas por XML.
+   * Só exibição: o backend preserva o valor da linha pelo `id`.
+   */
+  unit_tax_value: number | null;
 }
 
 interface FormState {
@@ -133,6 +141,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
           reference_code: '',
           unit: f.model === 'nf3e' ? 'kWh' : 'UN',
           unit_value: '',
+          unit_tax_value: null,
         },
       ],
     }));
@@ -154,13 +163,16 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
         city: form.city,
         state: form.state,
         items: form.items.map((it) => ({
+          id: it.id,
           description: it.description,
           reference_code: it.reference_code,
           unit: it.unit,
           unit_value: Number(it.unit_value.replace(',', '.')) || 0,
         })),
       };
-      if (form.id) return api.patch(`${API_URL_INVOICES}/${form.id}`, payload);
+      if (form.id) {
+        return api.patch(`${API_URL_INVOICES}/${form.id}`, payload);
+      }
       return api.post(API_URL_INVOICES, payload);
     },
     async onSuccess() {
@@ -208,6 +220,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                   reference_code: '0601000',
                   unit: 'kWh',
                   unit_value: String(draft.unitPriceKwh),
+                  unit_tax_value: null,
                 },
               ]
             : [],
@@ -235,7 +248,7 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
             model: d.model,
             number: d.number ?? '',
             series: d.series ?? '',
-            issued_at: d.issued_at ? String(d.issued_at).slice(0, 10) : '',
+            issued_at: d.issued_at ? toDateInputValue(String(d.issued_at)) : '',
             access_key: d.access_key ?? '',
             company_id: d.company.id,
             company_label: d.company.fantasy_name || d.company.social_name,
@@ -244,10 +257,12 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
             state: d.state ?? '',
             items: (d.items ?? []).map((it: Record<string, unknown>) => ({
               _key: `row-${keyCounter.current++}`,
+              id: typeof it.id === 'string' ? it.id : undefined,
               description: String(it.description ?? ''),
               reference_code: String(it.reference_code ?? ''),
               unit: String(it.unit ?? ''),
               unit_value: String(it.unit_value ?? ''),
+              unit_tax_value: it.unit_tax_value == null ? null : Number(it.unit_tax_value),
             })),
           };
           setForm(loaded);
@@ -453,6 +468,12 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                           value={it.unit_value}
                           onChange={(e) => updateItem(index, { unit_value: e.target.value })}
                         />
+                        {/* Só leitura: vem do <vTotTrib> do XML, não é editável. */}
+                        {it.unit_tax_value != null && (
+                          <Text fontSize="xs" color="fg.muted" mt="1">
+                            trib. ≈ {formatPrice(it.unit_tax_value, 4)}
+                          </Text>
+                        )}
                       </Box>
                       <ActionIconButton
                         aria-label="Remover item"
@@ -500,7 +521,9 @@ export function InvoiceModal({ ref }: { ref?: Ref<InvoiceModalHandle> }) {
                   title: 'Excluir nota?',
                   description: 'Esta nota e seus itens sairão da sua análise de inflação.',
                   onConfirm: async () => {
-                    if (form.id) await removeMutation.mutateAsync(form.id);
+                    if (form.id) {
+                      await removeMutation.mutateAsync(form.id);
+                    }
                   },
                 })
               }

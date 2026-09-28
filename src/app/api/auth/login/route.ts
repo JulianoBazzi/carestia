@@ -1,15 +1,28 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
-import { verifyPassword } from '~/lib/auth/password';
+import { hashPassword, verifyPassword } from '~/lib/auth/password';
 import { COOKIE_NAME, createToken } from '~/lib/auth/session';
 import prisma from '~/lib/prisma';
-import { enforceRateLimit } from '~/lib/rate-limit';
+import { checkRateLimit, enforceRateLimit, rateLimitResponse } from '~/lib/rate-limit';
 import { firstIssue, loginSchema } from '~/schemas/auth';
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+// Hash de uma senha qualquer: quando o e-mail não existe, comparamos contra ele
+// para a resposta levar o mesmo tempo — senão o tempo revela quais e-mails têm
+// conta. Gerado uma vez, sob demanda.
+let dummyHash: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  dummyHash ??= hashPassword('carestia-dummy-password');
+  return dummyHash;
+}
 
 export async function POST(req: Request) {
   // Anti brute-force: 10 tentativas por IP a cada 15 min.
-  const limited = enforceRateLimit(req, 'login', 10, 15 * 60 * 1000);
-  if (limited) return limited;
+  const limited = enforceRateLimit(req, 'login', 10, LOGIN_WINDOW_MS);
+  if (limited) {
+    return limited;
+  }
 
   const body = await req.json().catch(() => ({}));
   const parsed = loginSchema.safeParse(body);
@@ -21,13 +34,16 @@ export async function POST(req: Request) {
   }
   const { email, password } = parsed.data;
 
+  // Limite também por conta: um ataque distribuído (muitos IPs) contra o mesmo
+  // e-mail não passa do limite por IP.
+  const byEmail = checkRateLimit(`login:email:${email}`, 10, LOGIN_WINDOW_MS);
+  if (!byEmail.ok) {
+    return rateLimitResponse(byEmail.retryAfter);
+  }
+
   const user = await prisma.user.findUnique({ where: { email } });
-  if (
-    !user ||
-    user.deleted_at ||
-    !user.active ||
-    !(await verifyPassword(password, user.password))
-  ) {
+  const passwordOk = await verifyPassword(password, user?.password ?? (await getDummyHash()));
+  if (!user || user.deleted_at || !user.active || !passwordOk) {
     return NextResponse.json(
       { message: 'Credenciais inválidas.' },
       { status: StatusCodes.UNAUTHORIZED },

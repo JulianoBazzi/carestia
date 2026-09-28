@@ -29,9 +29,11 @@ import { StatusBadge } from '~/components/Badge/StatusBadge';
 import { PrimaryButton } from '~/components/Button/Base/PrimaryButton';
 import {
   API_URL_INVOICES,
-  TABLE_DASHBOARD_METRICS,
+  TABLE_COMPANIES,
   TABLE_INFLATION,
   TABLE_INVOICES,
+  TABLE_ITEMS,
+  TABLE_PUBLIC_PRICES,
 } from '~/config/constants';
 import { mapPool } from '~/lib/concurrency';
 import { api } from '~/services/apiClient';
@@ -51,6 +53,19 @@ interface IImportResult {
   status: 'imported' | 'duplicated' | 'error';
   message?: string;
   ignoredItems?: number;
+  invalidItems?: number;
+}
+
+/** Resumo das linhas descartadas de uma nota importada (ou a mensagem do servidor). */
+function importMessage(result: IImportResult): string | undefined {
+  if (result.status !== 'imported') {
+    return result.message;
+  }
+  const parts = [
+    result.ignoredItems && `${result.ignoredItems} item(ns) ignorado(s) pela administração`,
+    result.invalidItems && `${result.invalidItems} item(ns) sem preço válido descartado(s)`,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : result.message;
 }
 
 interface IImportResponse {
@@ -213,10 +228,7 @@ export function InvoiceImport() {
         const result = data.results[i];
         patch(entry.id, {
           status: result.status,
-          message:
-            result.status === 'imported' && result.ignoredItems
-              ? `${result.ignoredItems} item(ns) ignorado(s) pela administração`
-              : result.message,
+          message: importMessage(result),
         });
       });
     } catch (e) {
@@ -231,7 +243,9 @@ export function InvoiceImport() {
 
   async function processFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList);
-    if (files.length === 0 || busyRef.current) return;
+    if (files.length === 0 || busyRef.current) {
+      return;
+    }
 
     busyRef.current = true;
     setRunning(true);
@@ -256,8 +270,11 @@ export function InvoiceImport() {
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [TABLE_INVOICES] }),
-      queryClient.invalidateQueries({ queryKey: [TABLE_DASHBOARD_METRICS] }),
       queryClient.invalidateQueries({ queryKey: [TABLE_INFLATION] }),
+      // A importação cria itens/empresas no catálogo global e novas amostras.
+      queryClient.invalidateQueries({ queryKey: [TABLE_ITEMS] }),
+      queryClient.invalidateQueries({ queryKey: [TABLE_COMPANIES] }),
+      queryClient.invalidateQueries({ queryKey: [TABLE_PUBLIC_PRICES] }),
     ]);
   }
 
@@ -283,11 +300,15 @@ export function InvoiceImport() {
         opacity={busy ? 0.6 : 1}
         transition="all 0.15s"
         onClick={() => {
-          if (!busy && !busyRef.current) inputRef.current?.click();
+          if (!busy && !busyRef.current) {
+            inputRef.current?.click();
+          }
         }}
         onDragOver={(e) => {
           e.preventDefault();
-          if (!busy && !busyRef.current) setDragging(true);
+          if (!busy && !busyRef.current) {
+            setDragging(true);
+          }
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
@@ -319,7 +340,9 @@ export function InvoiceImport() {
               disabled={busy}
               onClick={(e) => {
                 e.stopPropagation();
-                if (!busy && !busyRef.current) inputRef.current?.click();
+                if (!busy && !busyRef.current) {
+                  inputRef.current?.click();
+                }
               }}
             >
               <LuCloudUpload /> {busy ? 'Importando…' : 'Selecionar arquivos'}
@@ -336,7 +359,9 @@ export function InvoiceImport() {
             hidden
             disabled={busy}
             onChange={(e) => {
-              if (e.target.files?.length) processFiles(e.target.files);
+              if (e.target.files?.length) {
+                processFiles(e.target.files);
+              }
               e.target.value = '';
             }}
           />

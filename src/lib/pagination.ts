@@ -1,7 +1,22 @@
+/** Inteiro positivo da query string; ausente/inválido (`?page=abc`) cai no padrão. */
+export function positiveInt(value: string | null, fallback: number, max = Number.MAX_SAFE_INTEGER) {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, max) : fallback;
+}
+
+/** Data da query string; ausente/inválida vira `undefined` (sem filtro). */
+export function optionalDate(value: string | null): Date | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
 export function getPaginationParams(searchParams: URLSearchParams) {
-  const page = Math.max(1, Number(searchParams.get('page') ?? 1));
+  const page = positiveInt(searchParams.get('page'), 1);
   const perPage = searchParams.get('limit') ?? searchParams.get('perPage');
-  const limit = Math.max(1, Math.min(100, Number(perPage ?? 20)));
+  const limit = positiveInt(perPage, 20, 100);
   const orderBy = searchParams.get('orderBy') ?? 'created_at';
   const sort = searchParams.get('order') ?? searchParams.get('sortedBy');
   const order: 'asc' | 'desc' = sort === 'asc' ? 'asc' : 'desc';

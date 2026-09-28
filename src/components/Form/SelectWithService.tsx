@@ -110,7 +110,9 @@ export function SelectWithService<T extends IEntityBase>({
   // aplica a resolução da última chamada — sem corrida de resultados.
   const loadOptions = (inputValue: string) =>
     new Promise<T[]>((resolve) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
       debounceRef.current = setTimeout(
         () => resolve(fetchOptions(inputValue)),
         inputValue ? SEARCH_DEBOUNCE_MS : 0,

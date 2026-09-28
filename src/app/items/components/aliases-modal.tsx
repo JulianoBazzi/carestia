@@ -95,7 +95,9 @@ export function AliasesModal({ ref }: { ref?: Ref<AliasesModalHandle> }) {
     <Dialog.Root
       open={open}
       onOpenChange={(d) => {
-        if (!d.open) setOpen(false);
+        if (!d.open) {
+          setOpen(false);
+        }
       }}
       placement="center"
     >

@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const category = await createCategory(parsed.data.name, parsed.data.active);
+    const category = await createCategory(parsed.data);
     return NextResponse.json({ data: category }, { status: StatusCodes.CREATED });
   } catch (e) {
     if (

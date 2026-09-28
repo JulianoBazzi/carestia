@@ -1,13 +1,13 @@
 import { StatusCodes } from 'http-status-codes';
 import { NextResponse } from 'next/server';
 import { getSession, isAdmin } from '~/lib/auth/current-user';
-import { errorResponse } from '~/lib/http';
-import { type IItemInput, ignoreItem, setItemCategory, updateItem } from '~/services/management';
+import { errorResponse, parseBody } from '~/lib/http';
+import { itemSchema } from '~/schemas/item';
+import { ignoreItem, setItemCategory, updateItem } from '~/services/management';
 
 export const runtime = 'nodejs';
 
 const P2002 = 'P2002';
-const TYPES = new Set(['product', 'service']);
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -24,25 +24,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     let count: number;
     if (isFullUpdate) {
-      const type = TYPES.has(body.type) ? (body.type as 'product' | 'service') : null;
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      const reference_code =
-        typeof body.reference_code === 'string' ? body.reference_code.trim() : '';
-      if (!type || !name || !reference_code) {
-        return NextResponse.json(
-          { message: 'Tipo, nome e código são obrigatórios.' },
-          { status: StatusCodes.BAD_REQUEST },
-        );
+      // Mesma validação do POST (`itemSchema`), inclusive a trava de produto.
+      const parsed = parseBody(itemSchema, body);
+      if (!parsed.ok) {
+        return NextResponse.json({ message: parsed.error }, { status: StatusCodes.BAD_REQUEST });
       }
-      const data: IItemInput = {
-        type,
-        name,
-        reference_code,
-        category_id:
-          typeof body.category_id === 'string' && body.category_id ? body.category_id : null,
-        ...(typeof body.unit === 'string' && { unit: body.unit || null }),
-      };
-      count = await updateItem(id, data);
+      // `type` sai fora de propósito: edição não converte o tipo de um item já
+      // existente (itens de serviço legados continuam serviço).
+      // O EAN é só-admin: o lookup público por código de barras e o atalho da
+      // importação confiam nele — apontar um item para o EAN de um produto
+      // popular sequestraria o preço exibido no scanner. Para os demais, o
+      // campo é ignorado (fica como está).
+      const { type: _type, ean, ...rest } = parsed.data;
+      count = await updateItem(id, isAdmin(session) ? { ...rest, ean } : rest);
     } else {
       const categoryId =
         typeof body.category_id === 'string' && body.category_id ? body.category_id : null;
