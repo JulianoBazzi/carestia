@@ -8,7 +8,9 @@ import prisma from '~/lib/prisma';
  * Índice público regional de preços (anonimizado). Agrega o PREÇO UNITÁRIO médio
  * por item (incluindo energia em R$/kWh) a partir de DUAS fontes:
  *   - `invoice_items` (notas fiscais importadas);
- *   - `price_observations` (etiquetas de gôndola lidas no scanner).
+ *   - `price_observations` (etiquetas de gôndola lidas no scanner e encartes
+ *     lidos pelo admin — `source = 'flyer'`, preço de oferta, contado em
+ *     `offerSamples` para a UI avisar).
  * Privacy-first: só usamos preço unitário + cidade/UF; nunca usuário, nota ou
  * dados pessoais — `user_id` não é lido em nenhuma das duas queries.
  *
@@ -29,6 +31,8 @@ export interface IPublicPrice {
   unit: string | null;
   avgPrice: number; // reais
   samples: number;
+  /** Quantas das amostras vieram de encarte (preço de oferta). */
+  offerSamples: number;
   series: IPublicPriceSeriesPoint[]; // média mensal recente (mini gráfico)
 }
 
@@ -43,6 +47,8 @@ export interface ITier {
   minPrice: number;
   maxPrice: number;
   samples: number;
+  /** Quantas das amostras vieram de encarte (preço de oferta). */
+  offerSamples: number;
   lastSeenAt: string; // ISO da amostra mais recente
   series: IPublicPriceSeriesPoint[];
 }
@@ -82,7 +88,12 @@ interface IPricePoint {
   state: string | null;
   city: string | null;
   ibgeCode: string | null;
+  /** Amostra de encarte (preço de oferta). */
+  offer: boolean;
 }
+
+/** Fonte das observações lidas de encarte (ver `createFlyerObservations`). */
+const FLYER_SOURCE = 'flyer';
 
 interface IPointFilter {
   state?: string;
@@ -139,6 +150,7 @@ async function loadInvoicePoints(filter: IPointFilter): Promise<IPricePoint[]> {
     state: r.invoice.state,
     city: r.invoice.city,
     ibgeCode: r.invoice.ibge_code,
+    offer: false,
   }));
 }
 
@@ -158,6 +170,7 @@ async function loadObservationPoints(filter: IPointFilter): Promise<IPricePoint[
       state: true,
       city: true,
       ibge_code: true,
+      source: true,
       // Idem: `user_id` fica de fora.
       item: { select: { id: true, name: true, type: true } },
     },
@@ -172,6 +185,7 @@ async function loadObservationPoints(filter: IPointFilter): Promise<IPricePoint[
     state: r.state,
     city: r.city,
     ibgeCode: r.ibge_code,
+    offer: r.source === FLYER_SOURCE,
   }));
 }
 
@@ -193,6 +207,10 @@ function buildSeries(points: IPricePoint[]): IPublicPriceSeriesPoint[] {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .slice(-8)
     .map(([month, v]) => ({ month, value: v.sum / v.n }));
+}
+
+function countOffers(points: IPricePoint[]): number {
+  return points.reduce((n, p) => n + (p.offer ? 1 : 0), 0);
 }
 
 function aggregate(points: IPricePoint[]): ITier | null {
@@ -220,6 +238,7 @@ function aggregate(points: IPricePoint[]): ITier | null {
     minPrice: min,
     maxPrice: max,
     samples: points.length,
+    offerSamples: countOffers(points),
     lastSeenAt: last.toISOString(),
     series: buildSeries(points),
   };
@@ -265,6 +284,7 @@ export async function getPublicPrices(opts: {
       unit: e.unit,
       avgPrice,
       samples: e.points.length,
+      offerSamples: countOffers(e.points),
       series: buildSeries(e.points),
     });
   }
@@ -358,6 +378,7 @@ export async function getPublicPriceByEan(
         state: true,
         city: true,
         ibge_code: true,
+        source: true,
       },
     }),
   ]);
@@ -373,6 +394,7 @@ export async function getPublicPriceByEan(
       state: r.invoice.state,
       city: r.invoice.city,
       ibgeCode: r.invoice.ibge_code,
+      offer: false,
     })),
     ...observationRows.map((r) => ({
       itemId: r.item_id,
@@ -384,6 +406,7 @@ export async function getPublicPriceByEan(
       state: r.state,
       city: r.city,
       ibgeCode: r.ibge_code,
+      offer: r.source === FLYER_SOURCE,
     })),
   ];
 

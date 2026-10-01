@@ -2,7 +2,7 @@
 
 import { Card, Flex, HStack, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { MiniBars } from '~/components/charts/MiniBars';
-import { APP_TIME_ZONE, formatPct, formatPrice, samplesText } from '~/lib/format';
+import { APP_TIME_ZONE, formatPct, formatPrice, offerSamplesText, samplesText } from '~/lib/format';
 import type { IEanPriceResult, ITier } from '~/services/public-prices';
 
 type TierKey = 'city' | 'state' | 'country';
@@ -67,6 +67,11 @@ function SmallTier({ label, tier }: { label: string; tier: ITier | null }) {
               <Text fontSize="xs" color="fg.muted">
                 {samplesText(tier.samples)} · visto em {seenOn(tier.lastSeenAt)}
               </Text>
+              {tier.offerSamples > 0 && (
+                <Text fontSize="xs" color="fg.muted">
+                  {offerSamplesText(tier.offerSamples)}
+                </Text>
+              )}
             </>
           ) : (
             <Text fontSize="sm" color="fg.muted">
@@ -139,6 +144,11 @@ export function EanPriceResult({ result, comparePrice }: IEanPriceResultProps) {
                   <Text fontSize="xs" color="fg.muted">
                     visto em {seenOn(best.tier.lastSeenAt)}
                   </Text>
+                  {best.tier.offerSamples > 0 && (
+                    <Text fontSize="xs" color="fg.muted">
+                      {offerSamplesText(best.tier.offerSamples)}
+                    </Text>
+                  )}
                 </Stack>
               </Flex>
 

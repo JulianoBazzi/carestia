@@ -9,6 +9,8 @@ export const API_URL_PUBLIC_PRICES = '/api/public/prices';
 export const API_URL_GEO_REVERSE = '/api/public/geo/reverse';
 export const API_URL_LABELS_READ = '/api/labels/read';
 export const API_URL_PRICE_OBSERVATIONS = '/api/price-observations';
+export const API_URL_FLYERS_READ = '/api/flyers/read';
+export const API_URL_FLYERS_OBSERVATIONS = '/api/flyers/observations';
 
 // Chaves de cache do TanStack Query (primeiro elemento do queryKey)
 export const TABLE_CATEGORIES = 'categories';

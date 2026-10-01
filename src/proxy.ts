@@ -18,7 +18,7 @@ const PUBLIC_PATHS = new Set([
 
 // Telas restritas ao admin (defesa em profundidade — as rotas de API também
 // checam por conta própria e retornam 403).
-const ADMIN_PATHS = ['/invoices/import/key'];
+const ADMIN_PATHS = ['/invoices/import/key', '/invoices/import/flyer'];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.has(pathname) || pathname.startsWith('/api/public');

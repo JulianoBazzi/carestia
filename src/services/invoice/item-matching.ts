@@ -363,3 +363,69 @@ export async function findOrCreateItem(
     return adoptExisting(tx, winner);
   }
 }
+
+export interface IItemSuggestion {
+  id: string;
+  name: string;
+  unit: string | null;
+  /** `word_similarity` (0–1) do nome buscado contra o nome do item ou um alias dele. */
+  similarity: number;
+  /** Mesmo tamanho de embalagem embutido no nome (ou nenhum dos dois tem). */
+  samePack: boolean;
+}
+
+/** Abaixo disso a sugestão é ruído — melhor mostrar "criar novo". */
+const SUGGESTION_MIN_SIMILARITY = 0.3;
+
+/**
+ * Sugestões de item do catálogo para um nome solto (encarte, que não traz EAN
+ * nem NCM). Diferente do matching da importação, NÃO filtra por código de
+ * referência nem por unidade: o melhor candidato costuma ser o item de NF-e
+ * (com NCM) do mesmo produto, e o encarte escreve a unidade do jeito dele. Por
+ * isso não decide sozinho — alimenta a revisão humana. Aliases de mesclagem
+ * contam como nome do item principal.
+ */
+export async function suggestItems(
+  tx: Prisma.TransactionClient,
+  name: string,
+  opts: { type?: IItemMatchInput['type']; limit?: number } = {},
+): Promise<IItemSuggestion[]> {
+  const key = matchKey(name);
+  if (!key) {
+    return [];
+  }
+  const type = opts.type ?? 'product';
+  const limit = opts.limit ?? 3;
+  const rows = await tx.$queryRaw<{ id: string; name: string; unit: string | null; sim: number }[]>`
+    SELECT id, name, unit, sim
+    FROM (
+      SELECT DISTINCT ON (c.id) c.id, c.name, c.unit, c.sim
+      FROM (
+        SELECT i.id, i.name, i.unit,
+               word_similarity(${key}::text, regexp_replace(i.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim
+        FROM items i
+        WHERE i.type = ${type}::item_type
+          AND i.deleted_at IS NULL
+        UNION ALL
+        SELECT i.id, i.name, i.unit,
+               word_similarity(${key}::text, regexp_replace(a.name, '[^A-Za-z0-9 ]', '', 'g')) AS sim
+        FROM item_aliases a
+        JOIN items i ON i.id = a.item_id
+        WHERE a.type = ${type}::item_type
+          AND i.deleted_at IS NULL
+      ) c
+      WHERE c.sim >= ${SUGGESTION_MIN_SIMILARITY}
+      ORDER BY c.id, c.sim DESC
+    ) best
+    ORDER BY sim DESC, id
+    LIMIT ${limit}
+  `;
+  const inputPack = packSize(name);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    unit: r.unit,
+    similarity: Number(r.sim),
+    samePack: packSize(r.name) === inputPack,
+  }));
+}

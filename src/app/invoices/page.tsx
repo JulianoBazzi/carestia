@@ -11,7 +11,7 @@ export default async function InvoicesPage() {
 
   return (
     <Template>
-      <InvoicesCard keyImportEnabled={isAdmin(session)} />
+      <InvoicesCard adminImports={isAdmin(session)} />
     </Template>
   );
 }

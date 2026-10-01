@@ -21,6 +21,7 @@ export const UNIT_ALIASES: Record<string, string> = {
   UNIDADES: 'UN',
   UND: 'UN',
   UNI: 'UN',
+  CADA: 'UN', // encarte: "R$ 6,59 cada"
   // Peça (distinta de UN e de PCT)
   PECA: 'PC',
   PECAS: 'PC',
@@ -100,6 +101,7 @@ export const UNIT_ALIASES: Record<string, string> = {
   BANDEJA: 'BJ',
   BANDEJAS: 'BJ',
   BANDEJ: 'BJ',
+  BDJ: 'BJ',
   BOBINA: 'BB',
   BOBINAS: 'BB',
   FRASCO: 'FR',
