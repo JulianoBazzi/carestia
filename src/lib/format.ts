@@ -68,3 +68,8 @@ export function monthKey(date: Date | string): string {
 export function samplesText(n: number): string {
   return n === 1 ? '1 amostra' : `${n} amostras`;
 }
+
+/** Aviso de quantas amostras são preço de encarte (oferta), já pluralizado. */
+export function offerSamplesText(n: number): string {
+  return n === 1 ? 'inclui 1 preço de encarte' : `inclui ${n} preços de encarte`;
+}

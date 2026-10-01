@@ -22,7 +22,7 @@ import { MiniBars } from '~/components/charts/MiniBars';
 import { EmptyState } from '~/components/EmptyState';
 import { Select } from '~/components/Form/Select';
 import { API_URL_PUBLIC_PRICES, TABLE_PUBLIC_PRICES } from '~/config/constants';
-import { formatPrice, samplesText } from '~/lib/format';
+import { formatPrice, offerSamplesText, samplesText } from '~/lib/format';
 import { api } from '~/services/apiClient';
 
 interface IPublicPriceSeriesPoint {
@@ -37,6 +37,7 @@ interface IPublicPrice {
   unit: string | null;
   avgPrice: number;
   samples: number;
+  offerSamples: number;
   series: IPublicPriceSeriesPoint[];
 }
 
@@ -249,6 +250,7 @@ export function PublicPricesExplorer({ emptyAction }: IPublicPricesExplorerProps
                         <Text fontSize="xs" color="fg.muted">
                           {p.type === 'energy' ? 'Energia elétrica' : p.unit || 'unidade'} ·{' '}
                           {samplesText(p.samples)}
+                          {p.offerSamples > 0 && ` · ${offerSamplesText(p.offerSamples)}`}
                         </Text>
                       </Stack>
                       {p.type === 'energy' && <LuZap color="var(--chakra-colors-energy-solid)" />}

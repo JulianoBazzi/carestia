@@ -179,8 +179,15 @@ describe('getPublicPrices — filtros', () => {
 });
 
 /** Observação de etiqueta no formato devolvido pelo select do explorer. */
-function observation(o: { itemId?: string; value: number; month?: string; state?: string }) {
+function observation(o: {
+  itemId?: string;
+  value: number;
+  month?: string;
+  state?: string;
+  source?: string;
+}) {
   return {
+    source: o.source ?? 'label_photo',
     unit_value: o.value,
     unit: 'KG',
     observed_at: new Date(`${o.month ?? '2026-01'}-20T12:00:00Z`),
@@ -192,6 +199,17 @@ function observation(o: { itemId?: string; value: number; month?: string; state?
 }
 
 describe('getPublicPrices — observações de etiqueta', () => {
+  it('conta as amostras de encarte à parte, sem tirá-las da média', async () => {
+    prismaMock.invoiceItem.findMany.mockResolvedValue(samples([10]));
+    prismaMock.priceObservation.findMany.mockResolvedValue([
+      observation({ value: 8, source: 'flyer' }),
+      observation({ value: 12 }),
+    ]);
+
+    const { prices } = await getPublicPrices({});
+    expect(prices[0]).toMatchObject({ samples: 3, offerSamples: 1, avgPrice: 10 });
+  });
+
   it('soma as observações às amostras de nota do mesmo item', async () => {
     prismaMock.invoiceItem.findMany.mockResolvedValue(samples([6, 8]));
     prismaMock.priceObservation.findMany.mockResolvedValue([observation({ value: 10 })]);
@@ -253,8 +271,15 @@ function eanInvoiceRow(r: {
   };
 }
 
-function eanObservationRow(r: { value: number; state: string; city: string; date?: string }) {
+function eanObservationRow(r: {
+  value: number;
+  state: string;
+  city: string | null;
+  date?: string;
+  source?: string;
+}) {
   return {
+    source: r.source ?? 'label_photo',
     unit_value: r.value,
     unit: 'UN',
     item_id: 'i1',
@@ -266,6 +291,23 @@ function eanObservationRow(r: { value: number; state: string; city: string; date
 }
 
 describe('getPublicPriceByEan', () => {
+  it('marca em cada recorte quantas amostras vieram de encarte', async () => {
+    prismaMock.item.findMany.mockResolvedValue([catalogItem()]);
+    prismaMock.invoiceItem.findMany.mockResolvedValue([
+      eanInvoiceRow({ value: 20, state: 'MS', city: 'DOURADOS' }),
+    ]);
+    prismaMock.priceObservation.findMany.mockResolvedValue([
+      eanObservationRow({ value: 17, state: 'MS', city: 'DOURADOS', source: 'flyer' }),
+      // Encarte válido para a UF inteira: entra na UF, não na cidade.
+      eanObservationRow({ value: 18, state: 'MS', city: null, source: 'flyer' }),
+    ]);
+
+    const { tiers } = await getPublicPriceByEan(EAN, { state: 'MS', city: 'Dourados' });
+
+    expect(tiers?.city).toMatchObject({ samples: 2, offerSamples: 1 });
+    expect(tiers?.state).toMatchObject({ samples: 3, offerSamples: 2 });
+  });
+
   it('EAN fora do catálogo devolve item nulo sem consultar preços', async () => {
     const result = await getPublicPriceByEan(EAN, { state: 'SP', city: 'Campinas' });
 

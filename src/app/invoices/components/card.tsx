@@ -5,7 +5,15 @@ import { useDebounce } from '@julianobazzi/nextjs-utils';
 import { useMutation } from '@tanstack/react-query';
 import NextLink from 'next/link';
 import { useMemo, useRef, useState } from 'react';
-import { LuDownload, LuKeyRound, LuPencil, LuPlus, LuTrash2, LuUpload } from 'react-icons/lu';
+import {
+  LuDownload,
+  LuKeyRound,
+  LuNewspaper,
+  LuPencil,
+  LuPlus,
+  LuTrash2,
+  LuUpload,
+} from 'react-icons/lu';
 import { InvoiceModal, type InvoiceModalHandle } from '~/app/invoices/components/modal';
 import { AdSlot } from '~/components/Ad/AdSlot';
 import { StatusBadge } from '~/components/Badge/StatusBadge';
@@ -35,10 +43,11 @@ const TYPE_OPTIONS: ISelectOption[] = [
 ];
 
 interface InvoicesCardProps {
-  keyImportEnabled: boolean;
+  /** Admin: mostra as importações restritas (por chave, encarte). */
+  adminImports: boolean;
 }
 
-export function InvoicesCard({ keyImportEnabled }: InvoicesCardProps) {
+export function InvoicesCard({ adminImports }: InvoicesCardProps) {
   const modalRef = useRef<InvoiceModalHandle>(null);
   const confirmRef = useRef<ConfirmDialogHandle>(null);
   const { successFeedbackToast, errorFeedbackToast } = useFeedback();
@@ -196,12 +205,19 @@ export function InvoicesCard({ keyImportEnabled }: InvoicesCardProps) {
           <Button size="sm" variant="outline" onClick={() => modalRef.current?.onOpenDialog()}>
             <LuPlus /> Nova nota
           </Button>
-          {keyImportEnabled && (
-            <Button size="sm" variant="outline" asChild>
-              <NextLink href="/invoices/import/key">
-                <LuKeyRound /> Importar por chave
-              </NextLink>
-            </Button>
+          {adminImports && (
+            <>
+              <Button size="sm" variant="outline" asChild>
+                <NextLink href="/invoices/import/flyer">
+                  <LuNewspaper /> Importar encarte
+                </NextLink>
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <NextLink href="/invoices/import/key">
+                  <LuKeyRound /> Importar por chave
+                </NextLink>
+              </Button>
+            </>
           )}
           <PrimaryButton size="sm" asChild>
             <NextLink href="/invoices/import">

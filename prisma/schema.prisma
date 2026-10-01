@@ -208,18 +208,20 @@ model InvoiceItem {
 // moderação e NUNCA é lido na agregação pública (mesma regra de invoices).
 // Não entra na inflação pessoal (não é compra).
 model PriceObservation {
-  id          String    @id @db.VarChar(26)
-  user_id     String    @db.VarChar(26)
-  item_id     String    @db.VarChar(26)
-  unit_value  Decimal   @db.Decimal(14, 4)
-  unit        String?   @db.VarChar(10)
-  source      String    @db.VarChar(20) // "label_photo"
-  observed_at DateTime  @db.Timestamptz
-  city        String?   @db.VarChar(255)
-  state       String?   @db.VarChar(2)
-  ibge_code   String?   @db.VarChar(7)
-  created_at  DateTime  @default(now()) @db.Timestamptz
-  deleted_at  DateTime? @db.Timestamptz
+  id            String    @id @db.VarChar(26)
+  user_id       String    @db.VarChar(26)
+  item_id       String    @db.VarChar(26)
+  unit_value    Decimal   @db.Decimal(14, 4)
+  /// Preço "de" riscado do encarte (só `source = "flyer"`); fora da média.
+  regular_value Decimal?  @db.Decimal(14, 4)
+  unit          String?   @db.VarChar(10)
+  source        String    @db.VarChar(20) // "label_photo" | "flyer"
+  observed_at   DateTime  @db.Timestamptz
+  city          String?   @db.VarChar(255)
+  state         String?   @db.VarChar(2)
+  ibge_code     String?   @db.VarChar(7)
+  created_at    DateTime  @default(now()) @db.Timestamptz
+  deleted_at    DateTime? @db.Timestamptz
 
   user User @relation(fields: [user_id], references: [id])
   item Item @relation(fields: [item_id], references: [id])
