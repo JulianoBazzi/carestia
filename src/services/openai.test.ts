@@ -1,16 +1,20 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { responsesCreate } = vi.hoisted(() => ({ responsesCreate: vi.fn() }));
+const { responsesCreate, chatCreate } = vi.hoisted(() => ({
+  responsesCreate: vi.fn(),
+  chatCreate: vi.fn(),
+}));
 
 vi.mock('openai', () => ({
   default: class {
     responses = { create: responsesCreate };
-    chat = { completions: { create: vi.fn() } };
+    chat = { completions: { create: chatCreate } };
   },
 }));
 
 import {
+  categorizeItem,
   FLYER_MAX_ITEMS,
   readFlyer,
   readPriceLabel,
@@ -76,6 +80,7 @@ describe('readPriceLabel', () => {
       unit: null,
     });
     const args = responsesCreate.mock.calls[0][0];
+    expect(args.model).toBe('gpt-6.1-sol');
     expect(args.input[1].content[1]).toMatchObject({ type: 'input_image', image_url: IMAGE });
     expect(args.text.format).toMatchObject({ type: 'json_schema', strict: true });
   });
@@ -175,7 +180,8 @@ describe('readFlyer', () => {
     expect(reading?.items).toHaveLength(1);
     const [args, options] = responsesCreate.mock.calls[0];
     expect(args.input[0].content).toContain('2026-10-01');
-    expect(args.input[1].content[1]).toMatchObject({ type: 'input_image', detail: 'high' });
+    expect(args.model).toBe('gpt-6.1-sol');
+    expect(args.input[1].content[1]).toMatchObject({ type: 'input_image', detail: 'original' });
     expect(options).toMatchObject({ maxRetries: 0 });
   });
 
@@ -186,5 +192,33 @@ describe('readFlyer', () => {
     vi.stubEnv('OPENAI_API_KEY', '');
     expect(await readFlyer(IMAGE, '2026-10-01')).toBeNull();
     expect(responsesCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('categorizeItem', () => {
+  it('usa o modelo econômico com pouco raciocínio e valida o slug', async () => {
+    chatCreate.mockResolvedValue({
+      choices: [{ message: { content: JSON.stringify({ category: 'groceries' }) } }],
+    });
+
+    const slug = await categorizeItem({
+      name: 'ARROZ TIPO 1 5KG',
+      referenceCode: '10063021',
+      type: 'product',
+    });
+
+    expect(slug).toBe('groceries');
+    expect(chatCreate.mock.calls[0][0]).toMatchObject({
+      model: 'gpt-6-luna',
+      reasoning_effort: 'low',
+    });
+  });
+
+  it('energia e serviço não chamam o modelo', async () => {
+    expect(await categorizeItem({ name: 'X', referenceCode: '', type: 'energy' })).toBe('energy');
+    expect(await categorizeItem({ name: 'X', referenceCode: '', type: 'service' })).toBe(
+      'services',
+    );
+    expect(chatCreate).not.toHaveBeenCalled();
   });
 });

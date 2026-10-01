@@ -11,7 +11,16 @@ import { isUf } from '~/lib/ufs';
  * e nem chamam o modelo. Privacy-first: só o nome (genérico) + NCM saem daqui.
  */
 
-const MODEL = 'gpt-5.6-terra';
+/**
+ * Categorização: escolha entre slugs fixos a partir de nome + NCM, item a item
+ * em lote — tarefa simples e de volume, vai no modelo econômico.
+ */
+const CATEGORIZE_MODEL = 'gpt-6-luna';
+/**
+ * Leitura de imagem (etiqueta e encarte): dígitos miúdos e preço de clube × geral
+ * erram com facilidade, e o erro vai direto para o índice público — modelo de ponta.
+ */
+const VISION_MODEL = 'gpt-6.1-sol';
 
 const SLUGS = DEFAULT_CATEGORIES.map((c) => c.slug);
 
@@ -59,7 +68,9 @@ export async function categorizeItem(input: ICategorizeInput): Promise<string | 
 
   try {
     const completion = await getClient().chat.completions.create({
-      model: MODEL,
+      model: CATEGORIZE_MODEL,
+      // Classificação direta: raciocinar mais só encarece e atrasa o lote.
+      reasoning_effort: 'low',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `Produto: "${input.name}". NCM: ${input.referenceCode}.` },
@@ -163,7 +174,7 @@ export async function readPriceLabel(imageDataUrl: string): Promise<IPriceLabelR
 
   try {
     const response = await getClient().responses.create({
-      model: MODEL,
+      model: VISION_MODEL,
       input: [
         { role: 'system', content: LABEL_PROMPT },
         {
@@ -226,7 +237,7 @@ export interface IFlyerReading {
 /** Teto de itens por imagem — um encarte denso tem ~20; o resto é ruído. */
 export const FLYER_MAX_ITEMS = 100;
 const FLYER_MAX_CITIES = 10;
-/** Encarte denso em `detail: high` demora bem mais que uma etiqueta. */
+/** Encarte denso em resolução original demora bem mais que uma etiqueta. */
 const FLYER_TIMEOUT_MS = 90_000;
 
 function flyerPrompt(today: string): string {
@@ -396,15 +407,16 @@ export async function readFlyer(
   try {
     const response = await getClient().responses.create(
       {
-        model: MODEL,
+        model: VISION_MODEL,
         input: [
           { role: 'system', content: flyerPrompt(today) },
           {
             role: 'user',
             content: [
               { type: 'input_text', text: 'Leia os produtos e preços deste encarte.' },
-              // Encarte denso tem letra miúda: `auto` costuma reduzir demais.
-              { type: 'input_image', image_url: imageDataUrl, detail: 'high' },
+              // Encarte denso tem letra miúda: `auto`/`high` podem reduzir a imagem;
+              // `original` é o recomendado para OCR.
+              { type: 'input_image', image_url: imageDataUrl, detail: 'original' },
             ],
           },
         ],
